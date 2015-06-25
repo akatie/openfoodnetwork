@@ -12,6 +12,7 @@ require File.expand_path("../../config/environment", __FILE__)
 require 'rspec/rails'
 require 'capybara'
 require 'database_cleaner'
+require 'paper_trail/frameworks/rspec'
 
 # Allow connections to phantomjs/selenium whilst raising errors
 # when connecting to external sites
