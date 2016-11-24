@@ -1,3 +1,5 @@
+require 'open_food_network/property_merge'
+
 class Api::EnterpriseSerializer < ActiveModel::Serializer
   # We reference this here because otherwise the serializer complains about its absence
   Api::IdSerializer
@@ -19,6 +21,8 @@ end
 
 class Api::UncachedEnterpriseSerializer < ActiveModel::Serializer
   attributes :orders_close_at, :active
+  has_many :supplied_properties, serializer: Api::PropertySerializer
+  has_many :distributed_properties, serializer: Api::PropertySerializer
 
   def orders_close_at
     options[:data].earliest_closing_times[object.id]
@@ -26,6 +30,23 @@ class Api::UncachedEnterpriseSerializer < ActiveModel::Serializer
 
   def active
     options[:data].active_distributors.andand.include? object
+  end
+
+  def supplied_properties
+    # This results in 3 queries per enterprise
+    product_properties  = Spree::Property.applied_by(object)
+    producer_properties = object.properties
+
+    OpenFoodNetwork::PropertyMerge.merge product_properties, producer_properties
+  end
+
+  def distributed_properties
+    # This results in 3 queries per enterprise
+    product_properties  = Spree::Property.sold_by(object)
+    ids = ProducerProperty.sold_by(object).pluck(:property_id)
+    producer_properties = Spree::Property.where(id: ids)
+
+    OpenFoodNetwork::PropertyMerge.merge product_properties, producer_properties
   end
 end
 
@@ -41,14 +62,12 @@ class Api::CachedEnterpriseSerializer < ActiveModel::Serializer
   attributes :name, :id, :description, :latitude, :longitude,
     :long_description, :website, :instagram, :linkedin, :twitter,
     :facebook, :is_primary_producer, :is_distributor, :phone, :visible,
-    :email, :hash, :logo, :promo_image, :path, :pickup, :delivery,
+    :email_address, :hash, :logo, :promo_image, :path, :pickup, :delivery,
     :icon, :icon_font, :producer_icon_font, :category, :producers, :hubs
 
   attributes :taxons, :supplied_taxons
 
   has_one :address, serializer: Api::AddressSerializer
-
-
   def taxons
     ids_to_objs options[:data].distributed_taxons[object.id]
   end
@@ -67,8 +86,8 @@ class Api::CachedEnterpriseSerializer < ActiveModel::Serializer
     services ? services[:delivery] : false
   end
 
-  def email
-    object.email.to_s.reverse
+  def email_address
+    object.email_address.to_s.reverse
   end
 
   def hash
@@ -76,11 +95,11 @@ class Api::CachedEnterpriseSerializer < ActiveModel::Serializer
   end
 
   def logo
-    object.logo(:medium) if object.logo.exists?
+    object.logo(:medium) if object.logo?
   end
 
   def promo_image
-    object.promo_image(:large) if object.promo_image.exists?
+    object.promo_image(:large) if object.promo_image?
   end
 
   def path

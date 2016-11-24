@@ -180,7 +180,6 @@ describe Enterprise do
   describe "validations" do
     subject { FactoryGirl.create(:distributor_enterprise) }
     it { should validate_presence_of(:name) }
-    it { should validate_presence_of(:email) }
     it { should validate_uniqueness_of(:permalink) }
     it { should ensure_length_of(:description).is_at_most(255) }
 
@@ -210,8 +209,14 @@ describe Enterprise do
       end
 
       it "does not prohibit the saving of an enterprise with no name clash" do
-        enterprise.email = 'new@email.com'
         enterprise.should be_valid
+      end
+
+      it "takes the owner's email address as default email" do
+        enterprise.email = nil
+        enterprise.should be_valid
+        enterprise.email.should be_present
+        enterprise.email.should eq owner.email
       end
     end
 
@@ -302,9 +307,9 @@ describe Enterprise do
     end
 
     describe "activated" do
-      let!(:inactive_enterprise1) { create(:enterprise, sells: "unspecified", confirmed_at: Time.now) ;}
+      let!(:inactive_enterprise1) { create(:enterprise, sells: "unspecified", confirmed_at: Time.zone.now) ;}
       let!(:inactive_enterprise2) { create(:enterprise, sells: "none", confirmed_at: nil) }
-      let!(:active_enterprise) { create(:enterprise, sells: "none", confirmed_at: Time.now) }
+      let!(:active_enterprise) { create(:enterprise, sells: "none", confirmed_at: Time.zone.now) }
 
       it "finds enterprises that have a sells property other than 'unspecified' and that are confirmed" do
         activated_enterprises = Enterprise.activated
@@ -419,7 +424,7 @@ describe Enterprise do
 
       it "doesn't show distributors of deleted products" do
         d = create(:distributor_enterprise)
-        create(:product, :distributors => [d], :deleted_at => Time.now)
+        create(:product, :distributors => [d], :deleted_at => Time.zone.now)
         Enterprise.active_distributors.should be_empty
       end
 
@@ -737,41 +742,6 @@ describe Enterprise do
       v = p.variants.first
       oc = create(:simple_order_cycle, distributors: [d], variants: [v])
       d.product_distribution_variants.should == []
-    end
-  end
-
-  describe "geo search" do
-    before(:each) do
-      Enterprise.delete_all
-
-      state_id_vic = Spree::State.where(abbr: "Vic").first.id
-      state_id_nsw = Spree::State.where(abbr: "NSW").first.id
-
-      @suburb_in_vic = Suburb.create(name: "Camberwell", postcode: 3124, latitude: -37.824818, longitude: 145.057957, state_id: state_id_vic)
-      @suburb_in_nsw = Suburb.create(name: "Cabramatta", postcode: 2166, latitude: -33.89507, longitude: 150.935889, state_id: state_id_nsw)
-
-      address_vic1 = FactoryGirl.create(:address, state_id: state_id_vic, city: "Hawthorn", zipcode: "3123")
-      address_vic1.update_column(:latitude, -37.842105)
-      address_vic1.update_column(:longitude, 145.045951)
-
-      address_vic2 = FactoryGirl.create(:address, state_id: state_id_vic, city: "Richmond", zipcode: "3121")
-      address_vic2.update_column(:latitude, -37.826869)
-      address_vic2.update_column(:longitude, 145.007098)
-
-      FactoryGirl.create(:distributor_enterprise, address: address_vic1)
-      FactoryGirl.create(:distributor_enterprise, address: address_vic2)
-    end
-
-    it "should find nearby hubs if there are any" do
-      Enterprise.find_near(@suburb_in_vic).count.should eql(2)
-    end
-
-    it "should not have nils in the result" do
-      Enterprise.find_near(@suburb_in_vic).should_not include(nil)
-    end
-
-    it "should not find hubs if not nearby " do
-      Enterprise.find_near(@suburb_in_nsw).count.should eql(0)
     end
   end
 

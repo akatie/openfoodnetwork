@@ -1,12 +1,15 @@
 %div.hubs_tab{ ng: { show: "activeTab == 'hubs'"} }
   %div.sixteen.columns.alpha.list-title
-    %span.five.columns.alpha Name
+    %span.five.columns.alpha
+      = t "spree_admin_enterprises_hubs_name"
     - if can? :admin, Spree::PaymentMethod
       %span.centered.three.columns Payment Methods
     - if can? :admin, Spree::ShippingMethod
-      %span.centered.three.columns Shipping Methods
+      %span.centered.three.columns
+        = t "spree_admin_enterprises_shipping_methods"
     - if can? :admin, EnterpriseFee
-      %span.centered.three.columns Enterprise Fees
+      %span.centered.three.columns
+        = t "spree_admin_enterprises_fees"
   %div.sixteen.columns.alpha.list
     - @enterprises.is_distributor.each do |enterprise|
       %a.sixteen.columns.alpha.list-item{ class: "#{cycle('odd','even')}", href: "#{main_app.edit_admin_enterprise_path(enterprise)}" }
@@ -16,27 +19,27 @@
           - if can? :admin, Spree::PaymentMethod
             - payment_method_count = enterprise.payment_methods.count
             - if payment_method_count > 0
-              %span.icon-ok-sign.with-tip{ title: "#{pluralize payment_method_count, 'payment method'}" }
+              %span.icon-ok-sign{ 'ofn-with-tip' => "#{pluralize payment_method_count, 'payment method'}" }
             - else
-              %span.icon-remove-sign.with-tip{ title: "#{enterprise.name} has no payment methods" }
+              %span.icon-remove-sign{ 'ofn-with-tip' => "#{enterprise.name} has no payment methods" }
           - else
             &nbsp;
         %span.symbol.three.columns.centered
           - if can? :admin, Spree::ShippingMethod
             - shipping_method_count = enterprise.shipping_methods.count
             - if shipping_method_count > 0
-              %span.icon-ok-sign.with-tip{ title: "#{pluralize shipping_method_count, 'shipping method'}" }
+              %span.icon-ok-sign{ 'ofn-with-tip' => "#{pluralize shipping_method_count, 'shipping method'}" }
             - else
-              %span.icon-remove-sign.with-tip{ title: "#{enterprise.name} has no shipping methods" }
+              %span.icon-remove-sign{ 'ofn-with-tip' => "#{enterprise.name} has no shipping methods" }
           - else
             &nbsp;
         %span.symbol.three.columns.centered
           - if can? :admin, EnterpriseFee
             - fee_count = enterprise.enterprise_fees.count
             - if fee_count > 0
-              %span.icon-ok-sign.with-tip{ title: "#{pluralize fee_count, 'fee'}" }
+              %span.icon-ok-sign{ 'ofn-with-tip' => "#{pluralize fee_count, 'fee'}" }
             - else
-              %span.icon-warning-sign.with-tip{ title: "#{enterprise.name} has no enterprise fees" }
+              %span.icon-warning-sign{ 'ofn-with-tip' => "#{enterprise.name} has no enterprise fees" }
           - else
             &nbsp;
         %span.two.columns.omega.right

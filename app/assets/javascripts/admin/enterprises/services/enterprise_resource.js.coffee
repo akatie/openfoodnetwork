@@ -1,5 +1,8 @@
 angular.module("admin.enterprises").factory 'EnterpriseResource', ($resource) ->
-  $resource('/admin/enterprises/:id.json', {}, {
+  ignoredAttrs = ->
+    ["$$hashKey", "producer", "package", "producerError", "packageError", "status"]
+
+  $resource('/admin/enterprises/:id/:action.json', {}, {
     'index':
       method: 'GET'
       isArray: true

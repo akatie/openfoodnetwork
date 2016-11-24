@@ -10,8 +10,15 @@ describe EnterpriseFee do
   end
 
   describe "callbacks" do
+    let(:ef) { create(:enterprise_fee) }
+
+    it "refreshes the products cache when saved" do
+      expect(OpenFoodNetwork::ProductsCache).to receive(:enterprise_fee_changed).with(ef)
+      ef.name = 'foo'
+      ef.save
+    end
+
     it "removes itself from order cycle coordinator fees when destroyed" do
-      ef = create(:enterprise_fee)
       oc = create(:simple_order_cycle, coordinator_fees: [ef])
 
       ef.destroy
@@ -19,12 +26,41 @@ describe EnterpriseFee do
     end
 
     it "removes itself from order cycle exchange fees when destroyed" do
-      ef = create(:enterprise_fee)
       oc = create(:simple_order_cycle)
       ex = create(:exchange, order_cycle: oc, enterprise_fees: [ef])
 
       ef.destroy
       ex.reload.exchange_fee_ids.should be_empty
+    end
+
+    describe "for tax_category" do
+      let(:tax_category) { create(:tax_category) }
+      let(:enterprise_fee) { create(:enterprise_fee, tax_category_id: nil, inherits_tax_category: true) }
+
+
+      it  "maintains valid tax_category settings" do
+        # Changing just tax_category, when inheriting
+        # tax_category is changed, inherits.. set to false
+        enterprise_fee.assign_attributes(tax_category_id: tax_category.id)
+        enterprise_fee.save!
+        expect(enterprise_fee.tax_category).to eq tax_category
+        expect(enterprise_fee.inherits_tax_category).to be false
+
+        # Changing inherits_tax_category, when tax_category is set
+        # tax_category is dropped, inherits.. set to true
+        enterprise_fee.assign_attributes(inherits_tax_category: true)
+        enterprise_fee.save!
+        expect(enterprise_fee.tax_category).to be nil
+        expect(enterprise_fee.inherits_tax_category).to be true
+
+        # Changing both tax_category and inherits_tax_category
+        # tax_category is changed, but inherits.. changes are dropped
+        enterprise_fee.assign_attributes(tax_category_id: tax_category.id)
+        enterprise_fee.assign_attributes(inherits_tax_category: true)
+        enterprise_fee.save!
+        expect(enterprise_fee.tax_category).to eq tax_category
+        expect(enterprise_fee.inherits_tax_category).to be false
+      end
     end
   end
 
@@ -39,7 +75,7 @@ describe EnterpriseFee do
 
       it "returns fees with any other calculator" do
         ef1 = create(:enterprise_fee, calculator: Spree::Calculator::DefaultTax.new)
-        ef2 = create(:enterprise_fee, calculator: Spree::Calculator::FlatPercentItemTotal.new)
+        ef2 = create(:enterprise_fee, calculator: Calculator::FlatPercentPerItem.new)
         ef3 = create(:enterprise_fee, calculator: Spree::Calculator::PerItem.new)
         ef4 = create(:enterprise_fee, calculator: Spree::Calculator::PriceSack.new)
 
@@ -57,7 +93,7 @@ describe EnterpriseFee do
 
       it "does not return fees with any other calculator" do
         ef1 = create(:enterprise_fee, calculator: Spree::Calculator::DefaultTax.new)
-        ef2 = create(:enterprise_fee, calculator: Spree::Calculator::FlatPercentItemTotal.new)
+        ef2 = create(:enterprise_fee, calculator: Calculator::FlatPercentPerItem.new)
         ef3 = create(:enterprise_fee, calculator: Spree::Calculator::PerItem.new)
         ef4 = create(:enterprise_fee, calculator: Spree::Calculator::PriceSack.new)
 

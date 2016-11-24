@@ -22,12 +22,12 @@ Darkswarm.factory "AuthenticationService", (Navigation, $modal, $location, Redir
       @selectedPath = path
       Navigation.navigate @selectedPath
 
-    active: Navigation.active
+    isActive: Navigation.isActive
 
     close: ->
       if location.pathname in ["/", "/checkout"]
         Navigation.navigate "/"
       else
-        Loading.message = "Taking you back to the home page"
+        Loading.message = t 'going_back_to_home_page'
         location.hash = ""
         location.pathname = "/"

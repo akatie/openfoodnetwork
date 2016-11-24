@@ -1,4 +1,8 @@
+require 'open_food_network/permalink_generator'
+require 'open_food_network/property_merge'
+
 Spree::Product.class_eval do
+  include PermalinkGenerator
   # We have an after_destroy callback on Spree::ProductOptionType. However, if we
   # don't specify dependent => destroy on this association, it is not called. See:
   # https://github.com/rails/rails/issues/7618
@@ -21,8 +25,8 @@ Spree::Product.class_eval do
 
   # validates_presence_of :variants, unless: :new_record?, message: "Product must have at least one variant"
   validates_presence_of :supplier
-  validates :primary_taxon, presence: { message: "^Product Category can't be blank" }
-  validates :tax_category_id, presence: { message: "^Tax Category can't be blank" }, if: "Spree::Config.products_require_tax_category"
+  validates :primary_taxon, presence: { message: I18n.t("validation_msg_product_category_cant_be_blank") }
+  validates :tax_category_id, presence: { message: I18n.t("validation_msg_tax") }, if: "Spree::Config.products_require_tax_category"
 
   validates_presence_of :variant_unit
   validates_presence_of :variant_unit_scale,
@@ -30,11 +34,13 @@ Spree::Product.class_eval do
   validates_presence_of :variant_unit_name,
                         if: -> p { p.variant_unit == 'items' }
 
-  after_save :ensure_standard_variant
   after_initialize :set_available_on_to_now, :if => :new_record?
-  after_save :update_units
-  after_touch :touch_distributors
+  before_validation :sanitize_permalink
   before_save :add_primary_taxon_to_taxons
+  after_touch :touch_distributors
+  after_save :ensure_standard_variant
+  after_save :update_units
+  after_save :refresh_products_cache
 
 
   # -- Joins
@@ -46,6 +52,13 @@ Spree::Product.class_eval do
                                   joins('LEFT OUTER JOIN order_cycles AS o_order_cycles ON (o_order_cycles.id = o_exchanges.order_cycle_id)')
 
   scope :with_order_cycles_inner, joins(:variants_including_master => {:exchanges => :order_cycle})
+
+  scope :visible_for, lambda { |enterprise|
+    joins('LEFT OUTER JOIN spree_variants AS o_spree_variants ON (o_spree_variants.product_id = spree_products.id)').
+    joins('LEFT OUTER JOIN inventory_items AS o_inventory_items ON (o_spree_variants.id = o_inventory_items.variant_id)').
+    where('o_inventory_items.enterprise_id = (?) AND visible = (?)', enterprise, true).
+    select('DISTINCT spree_products.*')
+  }
 
 
   # -- Scopes
@@ -116,11 +129,7 @@ Spree::Product.class_eval do
     ps = product_properties.all
 
     if inherits_properties
-      supplier.producer_properties.each do |producer_property|
-        unless ps.find { |product_property| product_property.property.presentation == producer_property.property.presentation }
-          ps << producer_property
-        end
-      end
+      ps = OpenFoodNetwork::PropertyMerge.merge(ps, supplier.producer_properties)
     end
 
     ps.
@@ -186,10 +195,15 @@ Spree::Product.class_eval do
   alias_method_chain :delete, :delete_from_order_cycles
 
 
+  def refresh_products_cache
+    OpenFoodNetwork::ProductsCache.product_changed self
+  end
+
+
   private
 
   def set_available_on_to_now
-    self.available_on ||= Time.now
+    self.available_on ||= Time.zone.now
   end
 
   def update_units
@@ -237,6 +251,13 @@ Spree::Product.class_eval do
         self.errors.add(att, error)
       end
       raise
+    end
+  end
+
+  def sanitize_permalink
+    if permalink.blank? || permalink_changed?
+      requested = permalink.presence || permalink_was.presence || name.presence || 'product'
+      self.permalink = create_unique_permalink(requested.parameterize)
     end
   end
 end

@@ -8,7 +8,8 @@ describe "AdminSimpleCreateOrderCycleCtrl", ->
   outgoing_exchange = {}
 
   beforeEach ->
-    scope = {}
+    scope =
+      $watch: jasmine.createSpy('$watch')
     order_cycle =
       coordinator_id: 123
       incoming_exchanges: [incoming_exchange]
@@ -18,16 +19,16 @@ describe "AdminSimpleCreateOrderCycleCtrl", ->
       addSupplier: jasmine.createSpy()
       addDistributor: jasmine.createSpy()
       setExchangeVariants: jasmine.createSpy()
-      new: jasmine.createSpy().andReturn order_cycle
+      new: jasmine.createSpy().and.returnValue order_cycle
     Enterprise =
-      get: jasmine.createSpy().andReturn {id: 123}
+      get: jasmine.createSpy().and.returnValue {id: 123}
       index: jasmine.createSpy()
-      suppliedVariants: jasmine.createSpy().andReturn('supplied variants')
+      suppliedVariants: jasmine.createSpy().and.returnValue('supplied variants')
     EnterpriseFee =
       index: jasmine.createSpy()
     ocInstance = {}
 
-    module('admin.order_cycles')
+    module('admin.orderCycles')
     inject ($controller) ->
       ctrl = $controller 'AdminSimpleCreateOrderCycleCtrl', {$scope: scope, OrderCycle: OrderCycle, Enterprise: Enterprise, EnterpriseFee: EnterpriseFee, ocInstance: ocInstance}
 

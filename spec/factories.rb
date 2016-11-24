@@ -15,15 +15,17 @@ FactoryGirl.define do
 
       # Incoming Exchanges
       ex1 = create(:exchange, :order_cycle => oc, :incoming => true,
-                   :sender => supplier1, :receiver => oc.coordinator)
+                   :sender => supplier1, :receiver => oc.coordinator,
+                   :receival_instructions => 'instructions 0')
       ex2 = create(:exchange, :order_cycle => oc, :incoming => true,
-                   :sender => supplier2, :receiver => oc.coordinator)
+                   :sender => supplier2, :receiver => oc.coordinator,
+                   :receival_instructions => 'instructions 1')
       ExchangeFee.create!(exchange: ex1,
                           enterprise_fee: create(:enterprise_fee, enterprise: ex1.sender))
       ExchangeFee.create!(exchange: ex2,
                           enterprise_fee: create(:enterprise_fee, enterprise: ex2.sender))
 
-      #Distributors
+      # Distributors
       distributor1 = create(:distributor_enterprise)
       distributor2 = create(:distributor_enterprise)
 
@@ -58,8 +60,8 @@ FactoryGirl.define do
   factory :simple_order_cycle, :class => OrderCycle do
     sequence(:name) { |n| "Order Cycle #{n}" }
 
-    orders_open_at  { Time.zone.now - 1.day }
-    orders_close_at { Time.zone.now + 1.week }
+    orders_open_at  { 1.day.ago }
+    orders_close_at { 1.week.from_now }
 
     coordinator { Enterprise.is_distributor.first || FactoryGirl.create(:distributor_enterprise) }
 
@@ -71,7 +73,7 @@ FactoryGirl.define do
 
     after(:create) do |oc, proxy|
       proxy.suppliers.each do |supplier|
-        ex = create(:exchange, :order_cycle => oc, :sender => supplier, :receiver => oc.coordinator, :incoming => true, :pickup_time => 'time', :pickup_instructions => 'instructions')
+        ex = create(:exchange, :order_cycle => oc, :sender => supplier, :receiver => oc.coordinator, :incoming => true, :receival_instructions => 'instructions')
         proxy.variants.each { |v| ex.variants << v }
       end
 
@@ -82,16 +84,44 @@ FactoryGirl.define do
     end
   end
 
+  factory :undated_order_cycle, parent: :simple_order_cycle do
+    orders_open_at  nil
+    orders_close_at nil
+  end
+
+  factory :upcoming_order_cycle, parent: :simple_order_cycle do
+    orders_open_at  { 1.week.from_now }
+    orders_close_at { 2.weeks.from_now }
+  end
+
+  factory :open_order_cycle, parent: :simple_order_cycle do
+    orders_open_at  { 1.week.ago }
+    orders_close_at { 1.week.from_now }
+  end
+
+  factory :closed_order_cycle, parent: :simple_order_cycle do
+    orders_open_at  { 2.weeks.ago }
+    orders_close_at { 1.week.ago }
+  end
+
   factory :exchange, :class => Exchange do
-    order_cycle { OrderCycle.first || FactoryGirl.create(:simple_order_cycle) }
-    sender      { FactoryGirl.create(:enterprise) }
-    receiver    { FactoryGirl.create(:enterprise) }
     incoming    false
+    order_cycle { OrderCycle.first || FactoryGirl.create(:simple_order_cycle) }
+    sender      { incoming ? FactoryGirl.create(:enterprise) : order_cycle.coordinator }
+    receiver    { incoming ? order_cycle.coordinator : FactoryGirl.create(:enterprise) }
   end
 
   factory :variant_override, :class => VariantOverride do
     price         77.77
     count_on_hand 11111
+    default_stock 2000
+    resettable  false
+  end
+
+  factory :inventory_item, :class => InventoryItem do
+    enterprise
+    variant
+    visible true
   end
 
   factory :enterprise, :class => Enterprise do
@@ -102,7 +132,7 @@ FactoryGirl.define do
     long_description '<p>Hello, world!</p><p>This is a paragraph.</p>'
     email 'enterprise@example.com'
     address { FactoryGirl.create(:address) }
-    confirmed_at { Time.now }
+    confirmed_at { Time.zone.now }
   end
 
   factory :supplier_enterprise, :parent => :enterprise do
@@ -187,6 +217,26 @@ FactoryGirl.define do
     distributor { create(:distributor_enterprise) }
   end
 
+  factory :order_with_credit_payment, parent: :completed_order_with_totals do
+    distributor { create(:distributor_enterprise)}
+    order_cycle { create(:simple_order_cycle) }
+
+    after(:create) do |order|
+      create(:payment, amount: order.total + 10000, order: order, state: "completed")
+      order.reload
+    end
+  end
+
+  factory :order_without_full_payment, parent: :completed_order_with_totals do
+    distributor { create(:distributor_enterprise)}
+    order_cycle { create(:simple_order_cycle) }
+
+    after(:create) do |order|
+      create(:payment, amount: order.total - 1, order: order, state: "completed")
+      order.reload
+    end
+  end
+
   factory :zone_with_member, :parent => :zone do
     default_tax true
 
@@ -209,20 +259,66 @@ FactoryGirl.define do
     end
   end
 
+  factory :producer_property, class: ProducerProperty do
+    value 'abc123'
+    producer { create(:supplier_enterprise) }
+    property
+  end
+
   factory :customer, :class => Customer do
     email { Faker::Internet.email }
     enterprise
     code { SecureRandom.base64(150) }
     user
+    bill_address { create(:address) }
+  end
+
+  factory :billable_period do
+    begins_at { Time.zone.now.beginning_of_month }
+    ends_at { Time.zone.now.beginning_of_month + 1.month }
+    sells { 'any' }
+    trial { false }
+    enterprise
+    owner { enterprise.owner }
+    turnover { rand(100000).to_f/100 }
+    account_invoice do
+      AccountInvoice.where(user_id: owner_id, year: begins_at.year, month: begins_at.month).first ||
+      FactoryGirl.create(:account_invoice, user: owner, year: begins_at.year, month: begins_at.month)
+    end
+  end
+
+  factory :account_invoice do
+    user { FactoryGirl.create :user }
+    year { 2000 + rand(100) }
+    month { 1 + rand(12) }
+  end
+
+  factory :filter_order_cycles_tag_rule, class: TagRule::FilterOrderCycles do
+    enterprise { FactoryGirl.create :distributor_enterprise }
+  end
+
+  factory :filter_shipping_methods_tag_rule, class: TagRule::FilterShippingMethods do
+    enterprise { FactoryGirl.create :distributor_enterprise }
+  end
+
+  factory :filter_products_tag_rule, class: TagRule::FilterProducts do
+    enterprise { FactoryGirl.create :distributor_enterprise }
+  end
+
+  factory :filter_payment_methods_tag_rule, class: TagRule::FilterPaymentMethods do
+    enterprise { FactoryGirl.create :distributor_enterprise }
+  end
+
+  factory :tag_rule, class: TagRule::DiscountOrder do
+    enterprise { FactoryGirl.create :distributor_enterprise }
+    before(:create) do |tr|
+      tr.calculator = Spree::Calculator::FlatPercentItemTotal.new(calculable: tr)
+    end
   end
 end
 
 
 FactoryGirl.modify do
-  factory :base_product do
-    unit_value 1
-    unit_description ''
-  end
   factory :product do
     primary_taxon { Spree::Taxon.first || FactoryGirl.create(:taxon) }
   end
@@ -236,12 +332,15 @@ FactoryGirl.modify do
     primary_taxon { Spree::Taxon.first || FactoryGirl.create(:taxon) }
     on_hand 3
 
+    unit_value 1
+    unit_description ''
+
     variant_unit 'weight'
     variant_unit_scale 1
     variant_unit_name ''
   end
 
-  factory :base_variant do
+  factory :variant do
     unit_value 1
     unit_description ''
   end
@@ -282,41 +381,5 @@ FactoryGirl.modify do
     after(:create) do |user|
       user.spree_roles << Spree::Role.find_or_create_by_name!('admin')
     end
-  end
-end
-
-
-# -- CMS
-FactoryGirl.define do
-  factory :cms_site, :class => Cms::Site do
-    identifier 'open-food-network'
-    label      'Open Food Network'
-    hostname   'localhost'
-  end
-
-  factory :cms_layout, :class => Cms::Layout do
-    site { Cms::Site.first || create(:cms_site) }
-    label 'layout'
-    identifier 'layout'
-    content '{{ cms:page:content:text }}'
-  end
-
-  factory :cms_page, :class => Cms::Page do
-    site { Cms::Site.first || create(:cms_site) }
-    label 'page'
-    sequence(:slug) { |n| "page-#{n}" }
-    layout { Cms::Layout.first || create(:cms_layout) }
-
-    # Pass content through to block, where it is stored
-    after(:create) do |cms_page, evaluator|
-      cms_page.blocks.first.update_attribute(:content, evaluator.content)
-      cms_page.save! # set_cached_content
-    end
-  end
-
-  factory :cms_block, :class => Cms::Block do
-    page { Cms::Page.first || create(:cms_page) }
-    identifier 'block'
-    content 'hello, block'
   end
 end

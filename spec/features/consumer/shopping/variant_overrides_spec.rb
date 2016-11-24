@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-feature "shopping with variant overrides defined", js: true do
+feature "shopping with variant overrides defined", js: true, retry: 3 do
   include AuthenticationWorkflow
   include WebHelper
   include ShopWorkflow
@@ -22,13 +22,13 @@ feature "shopping with variant overrides defined", js: true do
   let(:v4) { create(:variant, product: p1, price: 44.44, unit_value: 4) }
   let(:v5) { create(:variant, product: p3, price: 55.55, unit_value: 5, on_demand: true) }
   let(:v6) { create(:variant, product: p3, price: 66.66, unit_value: 6, on_demand: true) }
-  let!(:vo1) { create(:variant_override, hub: hub, variant: v1, price: 55.55, count_on_hand: nil) }
-  let!(:vo2) { create(:variant_override, hub: hub, variant: v2, count_on_hand: 0) }
-  let!(:vo3) { create(:variant_override, hub: hub, variant: v3, count_on_hand: 0) }
-  let!(:vo4) { create(:variant_override, hub: hub, variant: v4, count_on_hand: 3) }
-  let!(:vo5) { create(:variant_override, hub: hub, variant: v5, count_on_hand: 0) }
-  let!(:vo6) { create(:variant_override, hub: hub, variant: v6, count_on_hand: 6) }
-  let(:ef) { create(:enterprise_fee, enterprise: hub, fee_type: 'packing', calculator: Spree::Calculator::FlatPercentItemTotal.new(preferred_flat_percent: 10)) }
+  let!(:vo1) { create(:variant_override, hub: hub, variant: v1, price: 55.55, count_on_hand: nil, default_stock: nil, resettable: false) }
+  let!(:vo2) { create(:variant_override, hub: hub, variant: v2, count_on_hand: 0, default_stock: nil, resettable: false) }
+  let!(:vo3) { create(:variant_override, hub: hub, variant: v3, count_on_hand: 0, default_stock: nil, resettable: false) }
+  let!(:vo4) { create(:variant_override, hub: hub, variant: v4, count_on_hand: 3, default_stock: nil, resettable: false) }
+  let!(:vo5) { create(:variant_override, hub: hub, variant: v5, count_on_hand: 0, default_stock: nil, resettable: false) }
+  let!(:vo6) { create(:variant_override, hub: hub, variant: v6, count_on_hand: 6, default_stock: nil, resettable: false) }
+  let(:ef) { create(:enterprise_fee, enterprise: hub, fee_type: 'packing', calculator: Calculator::FlatPercentPerItem.new(preferred_flat_percent: 10)) }
 
   before do
     outgoing_exchange.variants = [v1, v2, v3, v4, v5, v6]
@@ -91,19 +91,17 @@ feature "shopping with variant overrides defined", js: true do
       page.should have_field "order[line_items_attributes][0][quantity]", with: '2'
       page.should have_selector "tr.line-item.variant-#{v1.id} .cart-item-total", text: '$122.22'
 
-      page.should have_selector "#edit-cart .item-total", text: '$122.21'
-      page.should have_selector "#edit-cart .grand-total", text: '$122.21'
+      page.should have_selector "#edit-cart .item-total", text: '$122.22'
+      page.should have_selector "#edit-cart .grand-total", text: '$122.22'
     end
 
     it "shows the correct prices in the checkout" do
       fill_in "variants[#{v1.id}]", with: "2"
-      show_cart
-      wait_until_enabled 'li.cart a.button'
-      click_link 'Checkout now'
+      click_checkout
 
-      page.should have_selector 'form.edit_order .cart-total', text: '$122.21'
+      page.should have_selector 'form.edit_order .cart-total', text: '$122.22'
       page.should have_selector 'form.edit_order .shipping', text: '$0.00'
-      page.should have_selector 'form.edit_order .total', text: '$122.21'
+      page.should have_selector 'form.edit_order .total', text: '$122.22'
     end
   end
 
@@ -111,22 +109,18 @@ feature "shopping with variant overrides defined", js: true do
   describe "creating orders" do
     it "creates the order with the correct prices" do
       fill_in "variants[#{v1.id}]", with: "2"
-      show_cart
-      wait_until_enabled 'li.cart a.button'
-      click_link 'Checkout now'
+      click_checkout
 
       complete_checkout
 
       o = Spree::Order.complete.last
       o.line_items.first.price.should == 55.55
-      o.total.should == 122.21
+      o.total.should == 122.22
     end
 
     it "subtracts stock from the override" do
       fill_in "variants[#{v4.id}]", with: "2"
-      show_cart
-      wait_until_enabled 'li.cart a.button'
-      click_link 'Checkout now'
+      click_checkout
 
       expect do
         expect do
@@ -137,9 +131,7 @@ feature "shopping with variant overrides defined", js: true do
 
     it "subtracts stock from stock-overridden on_demand variants" do
       fill_in "variants[#{v6.id}]", with: "2"
-      show_cart
-      wait_until_enabled 'li.cart a.button'
-      click_link 'Checkout now'
+      click_checkout
 
       expect do
         expect do
@@ -150,10 +142,7 @@ feature "shopping with variant overrides defined", js: true do
 
     it "does not subtract stock from overrides that do not override count_on_hand" do
       fill_in "variants[#{v1.id}]", with: "2"
-      show_cart
-      wait_until_enabled 'li.cart a.button'
-      click_link 'Checkout now'
-
+      click_checkout
       expect do
         complete_checkout
       end.to change { v1.reload.count_on_hand }.by(-2)
@@ -163,9 +152,7 @@ feature "shopping with variant overrides defined", js: true do
     it "does not show out of stock flags on order confirmation page" do
       v4.update_attribute :count_on_hand, 0
       fill_in "variants[#{v4.id}]", with: "2"
-      show_cart
-      wait_until_enabled 'li.cart a.button'
-      click_link 'Checkout now'
+      click_checkout
 
       complete_checkout
 
@@ -206,6 +193,13 @@ feature "shopping with variant overrides defined", js: true do
     end
 
     place_order
-    page.should have_content "Your order has been processed successfully"
+    expect(page).to have_content "Your order has been processed successfully"
   end
+
+  def click_checkout
+      show_cart
+      wait_until_enabled 'li.cart a.button'
+      first(:link, 'Checkout now').click
+  end
+
 end

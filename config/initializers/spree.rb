@@ -8,6 +8,10 @@
 
 
 require 'spree/product_filters'
+require 'spree/core/calculated_adjustments_decorator'
+
+require "#{Rails.root}/app/models/spree/payment_method_decorator"
+require "#{Rails.root}/app/models/spree/gateway_decorator"
 
 Spree.config do |config|
   config.shipping_instructions = true
@@ -40,9 +44,7 @@ module Spree
   module Core
     class Environment
       class Calculators
-        include EnvironmentExtension
-
-        attr_accessor :enterprise_fees
+        attr_accessor :enterprise_fees, :payment_methods
       end
     end
   end

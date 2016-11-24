@@ -12,7 +12,25 @@ Spree::Admin::SearchController.class_eval do
         :bill_address_lastname_start => params[:q]
         }).result.limit(10)
     end
-    render :users
 
+    render :users
   end
+
+  def customers
+    if spree_current_user.enterprises.pluck(:id).include? params[:distributor_id].to_i
+      @customers = Customer.ransack({m: 'or', email_start: params[:q], name_start: params[:q]})
+                        .result.where(enterprise_id: params[:distributor_id])
+    else
+      @customers = []
+    end
+
+    render json: @customers, each_serializer: Api::Admin::CustomerSerializer
+  end
+
+  def users_with_ams
+    users_without_ams
+    render json: @users, each_serializer: Api::Admin::UserSerializer
+  end
+
+  alias_method_chain :users, :ams
 end

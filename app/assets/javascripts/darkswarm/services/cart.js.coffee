@@ -1,36 +1,87 @@
-Darkswarm.factory 'Cart', (CurrentOrder, Variants, $timeout, $http)->
+Darkswarm.factory 'Cart', (CurrentOrder, Variants, $timeout, $http, $modal, $rootScope, localStorageService)->
   # Handles syncing of current cart/order state to server
   new class Cart
     dirty: false
+    update_running: false
+    update_enqueued: false
     order: CurrentOrder.order
     line_items: CurrentOrder.order?.line_items || []
+
     constructor: ->
       for line_item in @line_items
         line_item.variant.line_item = line_item
         Variants.register line_item.variant
-        line_item.variant.extended_name = @extendedVariantName(line_item.variant)
+
+    adjust: (line_item) =>
+      line_item.total_price = line_item.variant.price_with_fees * line_item.quantity
+      if line_item.quantity > 0
+        @line_items.push line_item unless line_item in @line_items
+      else
+        index = @line_items.indexOf(line_item)
+        @line_items.splice(index, 1) if index >= 0
+      @orderChanged()
 
     orderChanged: =>
       @unsaved()
+
+      if !@update_running
+        @scheduleUpdate()
+      else
+        @update_enqueued = true
+
+    scheduleUpdate: =>
       if @promise
         $timeout.cancel(@promise)
       @promise = $timeout @update, 1000
 
     update: =>
+      @update_running = true
+
       $http.post('/orders/populate', @data()).success (data, status)=>
         @saved()
+        @update_running = false
+
+        @compareAndNotifyStockLevels data.stock_levels
+
+        @popQueue() if @update_enqueued
+
       .error (response, status)=>
-        @scheduleRetry()
+        @scheduleRetry(status)
+        @update_running = false
+
+    compareAndNotifyStockLevels: (stockLevels) =>
+      scope = $rootScope.$new(true)
+      scope.variants = []
+
+      # TODO: These changes to quantity/max_quantity trigger another cart update, which
+      #       is unnecessary.
+
+      for li in @line_items when li.quantity > 0
+        if stockLevels[li.variant.id]?
+          li.variant.count_on_hand = stockLevels[li.variant.id].on_hand
+          if li.quantity > li.variant.count_on_hand
+            li.quantity = li.variant.count_on_hand
+            scope.variants.push li.variant
+          if li.variant.count_on_hand == 0 && li.max_quantity > li.variant.count_on_hand
+            li.max_quantity = li.variant.count_on_hand
+            scope.variants.push(li.variant) unless li.variant in scope.variants
+
+      if scope.variants.length > 0
+        $modal.open(templateUrl: "out_of_stock.html", scope: scope, windowClass: 'out-of-stock-modal')
+
+    popQueue: =>
+      @update_enqueued = false
+      @scheduleUpdate()
 
     data: =>
       variants = {}
-      for li in @line_items_present()
+      for li in @line_items when li.quantity > 0
         variants[li.variant.id] =
           quantity: li.quantity
           max_quantity: li.max_quantity
       {variants: variants}
 
-    scheduleRetry: =>
+    scheduleRetry: (status) =>
       console.log "Error updating cart: #{status}. Retrying in 3 seconds..."
       $timeout =>
         console.log "Retrying cart update"
@@ -44,43 +95,23 @@ Darkswarm.factory 'Cart', (CurrentOrder, Variants, $timeout, $http)->
     unsaved: =>
       @dirty = true
       $(window).bind "beforeunload", ->
-        "Your order hasn't been saved yet. Give us a few seconds to finish!"
-
-    line_items_present: =>
-      @line_items.filter (li)->
-        li.quantity > 0
+        t 'order_not_saved_yet'
 
     total_item_count: =>
-      @line_items_present().reduce (sum,li) ->
+      @line_items.reduce (sum,li) ->
         sum = sum + li.quantity
       , 0
 
     empty: =>
-      @line_items_present().length == 0
+      @line_items.length == 0
 
     total: =>
-      @line_items_present().map (li)->
-        li.variant.totalPrice()
+      @line_items.map (li)->
+        li.total_price
       .reduce (t, price)->
         t + price
       , 0
 
-    register_variant: (variant)=>
-      exists = @line_items.some (li)-> li.variant == variant
-      @create_line_item(variant) unless exists
-
-    create_line_item: (variant)->
-      variant.extended_name = @extendedVariantName(variant)
-      variant.line_item =
-        variant: variant
-        quantity: null
-        max_quantity: null
-      @line_items.push variant.line_item
-
-    extendedVariantName: (variant) =>
-      if variant.product_name == variant.name_to_display
-        variant.product_name
-      else
-        name =  "#{variant.product_name} - #{variant.name_to_display}"
-        name += " (#{variant.options_text})" if variant.options_text
-        name
+    clear: ->
+      @line_items = []
+      localStorageService.clearAll() # One day this will have to be moar GRANULAR

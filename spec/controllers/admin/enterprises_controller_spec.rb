@@ -28,6 +28,7 @@ module Admin
 
         spree_put :create, enterprise_params
         enterprise = Enterprise.find_by_name 'zzz'
+        response.should redirect_to edit_admin_enterprise_path enterprise
         distributor_manager.enterprise_roles.where(enterprise_id: enterprise).first.should be
       end
 
@@ -37,15 +38,17 @@ module Admin
 
         spree_put :create, enterprise_params
         enterprise = Enterprise.find_by_name 'zzz'
+        response.should redirect_to edit_admin_enterprise_path enterprise
         admin_user.enterprise_roles.where(enterprise_id: enterprise).should be_empty
       end
 
-      it "overrides the owner_id submitted by the user unless current_user is super admin" do
+      it "overrides the owner_id submitted by the user (when not super admin)" do
         controller.stub spree_current_user: distributor_manager
         enterprise_params[:enterprise][:owner_id] = user
 
         spree_put :create, enterprise_params
         enterprise = Enterprise.find_by_name 'zzz'
+        response.should redirect_to edit_admin_enterprise_path enterprise
         distributor_manager.enterprise_roles.where(enterprise_id: enterprise).first.should be
       end
 
@@ -58,6 +61,7 @@ module Admin
 
           spree_put :create, enterprise_params
           enterprise = Enterprise.find_by_name 'zzz'
+          response.should redirect_to edit_admin_enterprise_path enterprise
           enterprise.sells.should == 'any'
         end
 
@@ -68,6 +72,7 @@ module Admin
 
           spree_put :create, enterprise_params
           enterprise = Enterprise.find_by_name 'zzz'
+          response.should redirect_to edit_admin_enterprise_path enterprise
           enterprise.sells.should == 'none'
         end
 
@@ -80,6 +85,7 @@ module Admin
 
           spree_put :create, enterprise_params
           enterprise = Enterprise.find_by_name 'zzz'
+          response.should redirect_to edit_admin_enterprise_path enterprise
           enterprise.sells.should == 'none'
         end
       end
@@ -178,6 +184,58 @@ module Admin
               expect(ProducerProperty.count).to be 1
               property_names = producer.reload.properties.map(&:name)
               expect(property_names).to include 'A nice name'
+            end
+          end
+        end
+
+        describe "tag rules" do
+          let(:enterprise) { create(:distributor_enterprise) }
+          let!(:tag_rule) { create(:tag_rule, enterprise: enterprise) }
+
+          before do
+            login_as_enterprise_user [enterprise]
+          end
+
+          context "discount order rules" do
+            it "updates the existing rule with new attributes" do
+              spree_put :update, {
+                id: enterprise,
+                enterprise: {
+                  tag_rules_attributes: {
+                    '0' => {
+                      id: tag_rule,
+                      type: "TagRule::DiscountOrder",
+                      preferred_customer_tags: "some,new,tags",
+                      calculator_type: "Spree::Calculator::FlatPercentItemTotal",
+                      calculator_attributes: { id: tag_rule.calculator.id, preferred_flat_percent: "15" }
+                    }
+                  }
+                }
+              }
+              tag_rule.reload
+              expect(tag_rule.preferred_customer_tags).to eq "some,new,tags"
+              expect(tag_rule.calculator.preferred_flat_percent).to eq 15
+            end
+
+            it "creates new rules with new attributes" do
+              spree_put :update, {
+                id: enterprise,
+                enterprise: {
+                  tag_rules_attributes: {
+                    '0' => {
+                      id: "",
+                      type: "TagRule::DiscountOrder",
+                      preferred_customer_tags: "tags,are,awesome",
+                      calculator_type: "Spree::Calculator::FlatPercentItemTotal",
+                      calculator_attributes: { id: "", preferred_flat_percent: "24" }
+                    }
+                  }
+                }
+              }
+              expect(tag_rule.reload).to be
+              new_tag_rule = TagRule::DiscountOrder.last
+              expect(new_tag_rule.preferred_customer_tags).to eq "tags,are,awesome"
+              expect(new_tag_rule.calculator.preferred_flat_percent).to eq 24
             end
           end
         end
@@ -315,7 +373,7 @@ module Admin
           end
 
           context "if the trial has not finished" do
-            let(:trial_start) { Date.today.to_time }
+            let(:trial_start) { Date.current.to_time }
 
             before do
               enterprise.update_attribute(:shop_trial_start_date, trial_start)
@@ -335,7 +393,7 @@ module Admin
               expect(response).to redirect_to spree.admin_path
               expect(flash[:success]).to eq "Congratulations! Registration for #{enterprise.name} is complete!"
               expect(enterprise.reload.sells).to eq 'own'
-              expect(enterprise.reload.shop_trial_start_date).to be > Time.now-(1.minute)
+              expect(enterprise.reload.shop_trial_start_date).to be > Time.zone.now-(1.minute)
             end
           end
         end
@@ -359,7 +417,7 @@ module Admin
           end
 
           context "if the trial has not finished" do
-            let(:trial_start) { Date.today.to_time }
+            let(:trial_start) { Date.current.to_time }
 
             before do
               enterprise.update_attribute(:shop_trial_start_date, trial_start)
@@ -379,7 +437,7 @@ module Admin
               expect(response).to redirect_to spree.admin_path
               expect(flash[:success]).to eq "Congratulations! Registration for #{enterprise.name} is complete!"
               expect(enterprise.reload.sells).to eq 'any'
-              expect(enterprise.reload.shop_trial_start_date).to be > Time.now-(1.minute)
+              expect(enterprise.reload.shop_trial_start_date).to be > Time.zone.now-(1.minute)
             end
           end
         end
@@ -512,6 +570,21 @@ module Admin
         it "initializes permissions with the existing OrderCycle" do
           expect(OpenFoodNetwork::OrderCyclePermissions).to have_received(:new).with(user, "existing OrderCycle")
         end
+      end
+    end
+
+    describe "for_line_items" do
+      let!(:user) { create(:user) }
+      let!(:enterprise) { create(:enterprise, sells: 'any', owner: user) }
+
+      before do
+        # As a user with permission
+        controller.stub spree_current_user: user
+      end
+
+      it "initializes permissions with the existing OrderCycle" do
+        # expect(controller).to receive(:render_as_json).with([enterprise], {ams_prefix: 'basic', spree_current_user: user})
+        spree_get :for_line_items, format: :json
       end
     end
 

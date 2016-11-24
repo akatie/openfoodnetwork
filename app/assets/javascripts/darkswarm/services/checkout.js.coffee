@@ -3,20 +3,25 @@ Darkswarm.factory 'Checkout', (CurrentOrder, ShippingMethods, PaymentMethods, $h
     errors: {}
     secrets: {}
     order: CurrentOrder.order
-    ship_address_same_as_billing: true
 
     submit: ->
-      Loading.message = "Submitting your order: please wait"
+      Loading.message = t 'submitting_order'
       $http.put('/checkout', {order: @preprocess()}).success (data, status)=>
         Navigation.go data.path
       .error (response, status)=>
-        Loading.clear()
-        @errors = response.errors
-        RailsFlashLoader.loadFlash(response.flash)
+        if response.path
+          Navigation.go response.path
+        else
+          Loading.clear()
+          @errors = response.errors
+          RailsFlashLoader.loadFlash(response.flash)
 
     # Rails wants our Spree::Address data to be provided with _attributes
     preprocess: ->
-      munged_order = {}
+      munged_order =
+        default_bill_address: !!@default_bill_address
+        default_ship_address: !!@default_ship_address
+
       for name, value of @order # Clone all data from the order JSON object
         switch name
           when "bill_address"
@@ -59,8 +64,11 @@ Darkswarm.factory 'Checkout', (CurrentOrder, ShippingMethods, PaymentMethods, $h
     shippingPrice: ->
       @shippingMethod()?.price || 0.0
 
+    paymentPrice: ->
+      @paymentMethod()?.price || 0.0
+
     paymentMethod: ->
       PaymentMethods.payment_methods_by_id[@order.payment_method_id]
 
     cartTotal: ->
-      @shippingPrice() + @order.display_total
+      @order.display_total + @shippingPrice() + @paymentPrice()

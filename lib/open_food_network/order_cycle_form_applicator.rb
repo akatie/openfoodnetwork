@@ -1,3 +1,5 @@
+require 'open_food_network/order_cycle_permissions'
+
 module OpenFoodNetwork
 
   # There are two translator classes on the boundary between Angular and Rails: On the Angular side,
@@ -21,10 +23,12 @@ module OpenFoodNetwork
 
         if exchange_exists?(exchange[:enterprise_id], @order_cycle.coordinator_id, true)
           update_exchange(exchange[:enterprise_id], @order_cycle.coordinator_id, true,
-                          {variant_ids: variant_ids, enterprise_fee_ids: enterprise_fee_ids})
+                          {variant_ids: variant_ids, enterprise_fee_ids: enterprise_fee_ids,
+                           receival_instructions: exchange[:receival_instructions]})
         else
           add_exchange(exchange[:enterprise_id], @order_cycle.coordinator_id, true,
-                       {variant_ids: variant_ids, enterprise_fee_ids: enterprise_fee_ids})
+                       {variant_ids: variant_ids, enterprise_fee_ids: enterprise_fee_ids,
+                        receival_instructions: exchange[:receival_instructions],})
         end
       end
 
@@ -35,12 +39,18 @@ module OpenFoodNetwork
 
         if exchange_exists?(@order_cycle.coordinator_id, exchange[:enterprise_id], false)
           update_exchange(@order_cycle.coordinator_id, exchange[:enterprise_id], false,
-                          {variant_ids: variant_ids, enterprise_fee_ids: enterprise_fee_ids,
-                           pickup_time: exchange[:pickup_time], pickup_instructions: exchange[:pickup_instructions]})
+                          {variant_ids: variant_ids,
+                           enterprise_fee_ids: enterprise_fee_ids,
+                           pickup_time: exchange[:pickup_time],
+                           pickup_instructions: exchange[:pickup_instructions],
+                           tag_list: exchange[:tag_list]})
         else
           add_exchange(@order_cycle.coordinator_id, exchange[:enterprise_id], false,
-                       {variant_ids: variant_ids, enterprise_fee_ids: enterprise_fee_ids,
-                        pickup_time: exchange[:pickup_time], pickup_instructions: exchange[:pickup_instructions]})
+                       {variant_ids: variant_ids,
+                        enterprise_fee_ids: enterprise_fee_ids,
+                        pickup_time: exchange[:pickup_time],
+                        pickup_instructions: exchange[:pickup_instructions],
+                        tag_list: exchange[:tag_list]})
         end
       end
 
@@ -73,6 +83,7 @@ module OpenFoodNetwork
         attrs.delete :enterprise_fee_ids
         attrs.delete :pickup_time
         attrs.delete :pickup_instructions
+        attrs.delete :tag_list
       end
 
       if permission_for exchange
@@ -121,51 +132,51 @@ module OpenFoodNetwork
       editable_variants_for_outgoing_exchanges_to(receiver).pluck(:id)
     end
 
-    def find_incoming_exchange(attrs)
-      @order_cycle.exchanges.
-      where(:sender_id => attrs[:enterprise_id], :receiver_id => @order_cycle.coordinator_id, :incoming => true).first
-    end
-
-    def find_outgoing_exchange(attrs)
-      @order_cycle.exchanges.
-      where(:sender_id => @order_cycle.coordinator_id, :receiver_id => attrs[:enterprise_id], :incoming => false).first
-    end
-
-    def persisted_variants_hash(exchange)
-      exchange ||= OpenStruct.new(variants: [])
-      Hash[ exchange.variants.map{ |v| [v.id, true] } ]
+    def find_exchange(sender_id, receiver_id, incoming)
+      @order_cycle.exchanges.find_by_sender_id_and_receiver_id_and_incoming(sender_id, receiver_id, incoming)
     end
 
     def incoming_exchange_variant_ids(attrs)
-      exchange = find_incoming_exchange(attrs)
-      variants = persisted_variants_hash(exchange)
-
-      sender = exchange.andand.sender || Enterprise.find(attrs[:enterprise_id])
+      sender = Enterprise.find(attrs[:enterprise_id])
       receiver = @order_cycle.coordinator
-      permitted = editable_variant_ids_for_incoming_exchange_between(sender, receiver)
+      exchange = find_exchange(sender.id, receiver.id, true)
 
-      # Only change visibility for variants I have permission to edit
-      attrs[:variants].each do |variant_id, value|
-        variants[variant_id.to_i] = value  if permitted.include?(variant_id.to_i)
-      end
+      requested_ids = attrs[:variants].select{ |k,v| v }.keys.map(&:to_i) # Only the ids the user has requested
+      existing_ids = exchange.present? ? exchange.variants.pluck(:id) : [] # The ids that already exist
+      editable_ids = editable_variant_ids_for_incoming_exchange_between(sender, receiver) # The ids we are allowed to add/remove
 
-      variants.select { |k, v| v }.keys.map { |k| k.to_i }.sort
+      result = existing_ids
+
+      result |= (requested_ids & editable_ids) # add any requested & editable ids that are not yet in the exchange
+      result -= ((result & editable_ids) - requested_ids) # remove any editable ids that were not specifically mentioned in the request
+
+      result
     end
 
     def outgoing_exchange_variant_ids(attrs)
-      exchange = find_outgoing_exchange(attrs)
-      variants = persisted_variants_hash(exchange)
-
       sender = @order_cycle.coordinator
-      receiver = exchange.andand.receiver || Enterprise.find(attrs[:enterprise_id])
-      permitted = editable_variant_ids_for_outgoing_exchange_between(sender, receiver)
+      receiver = Enterprise.find(attrs[:enterprise_id])
+      exchange = find_exchange(sender.id, receiver.id, false)
 
-      # Only change visibility for variants I have permission to edit
-      attrs[:variants].each do |variant_id, value|
-        variants[variant_id.to_i] = value  if permitted.include?(variant_id.to_i)
-      end
+      requested_ids = attrs[:variants].select{ |k,v| v }.keys.map(&:to_i) # Only the ids the user has requested
+      existing_ids = exchange.present? ? exchange.variants.pluck(:id) : [] # The ids that already exist
+      editable_ids = editable_variant_ids_for_outgoing_exchange_between(sender, receiver) # The ids we are allowed to add/remove
 
-      variants.select { |k, v| v }.keys.map { |k| k.to_i }.sort
+      result = existing_ids
+
+      result |= (requested_ids & editable_ids) # add any requested & editable ids that are not yet in the exchange
+      result -= (result - incoming_variant_ids) # remove any ids not in incoming exchanges
+      result -= ((result & editable_ids) - requested_ids) # remove any editable ids that were not specifically mentioned in the request
+
+      result
+    end
+
+    def incoming_variant_ids
+      @order_cycle.supplied_variants.map &:id
+    end
+
+    def variants_to_a(variants)
+      variants.select { |k, v| v }.keys.map(&:to_i).sort
     end
   end
 end

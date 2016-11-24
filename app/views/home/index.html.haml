@@ -1,22 +1,23 @@
+:css
+  #tagline:before { background-image: url("#{ContentConfig.home_hero.url}") }
+
+
 %div{"ng-controller" => "HomeCtrl"}
-  = render partial: "shared/menu/alert"
-
-  #tagline
-    .row
-      .small-12.text-center.columns
-        %h1
-          / TODO: Rohan - logo asset & width is content manageable:
-          -# TODO: SVGify
-          %img{src: "/assets/logo-white-notext.png", width: "250", title: "Open Food Network Australia"}
-          %br/
-          %a.button.transparent{href: "/shops"}
-            Shop Now
-
+  = render "shared/menu/alert"
+  = render "home/tagline"
 
   #panes
-    = render partial: "home/brandstory"
-    = render partial: "home/system"
-    = render partial: "home/cta"
-    = render partial: "home/stats"
+    = render "home/brandstory"
 
-  = render partial: "shared/footer"
+    - if feature? :connect_learn_homepage
+      = render "home/learn"
+      = render "home/connect"
+      = render "home/system"
+    - else
+      = render "home/system"
+      = render "home/cta"
+
+    = render "home/stats"
+
+
+  = render "shared/footer"

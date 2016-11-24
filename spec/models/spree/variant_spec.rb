@@ -1,12 +1,21 @@
 require 'spec_helper'
 require 'open_food_network/option_value_namer'
+require 'open_food_network/products_cache'
 
 module Spree
   describe Variant do
+    describe "double loading" do
+      # app/models/spree/variant_decorator.rb  may be double-loaded in delayed job environment,
+      # so we need to be able to do so without error.
+      it "succeeds without error" do
+        load "#{Rails.root}/app/models/spree/variant_decorator.rb"
+      end
+    end
+
     describe "scopes" do
       it "finds non-deleted variants" do
         v_not_deleted = create(:variant)
-        v_deleted = create(:variant, deleted_at: Time.now)
+        v_deleted = create(:variant, deleted_at: Time.zone.now)
 
         Spree::Variant.not_deleted.should     include v_not_deleted
         Spree::Variant.not_deleted.should_not include v_deleted
@@ -102,6 +111,91 @@ module Spree
           p_external.variants.for_distribution(oc, d1).should be_empty
         end
       end
+
+      describe "finding variants based on visiblity in inventory" do
+        let(:enterprise) { create(:distributor_enterprise) }
+        let!(:new_variant) { create(:variant) }
+        let!(:hidden_variant) { create(:variant) }
+        let!(:visible_variant) { create(:variant) }
+
+        let!(:hidden_inventory_item) { create(:inventory_item, enterprise: enterprise, variant: hidden_variant, visible: false ) }
+        let!(:visible_inventory_item) { create(:inventory_item, enterprise: enterprise, variant: visible_variant, visible: true ) }
+
+        context "finding variants that are not hidden from an enterprise's inventory" do
+          context "when the enterprise given is nil" do
+            let!(:variants) { Spree::Variant.not_hidden_for(nil) }
+
+            it "returns an empty list" do
+              expect(variants).to eq []
+            end
+          end
+
+          context "when an enterprise is given" do
+            let!(:variants) { Spree::Variant.not_hidden_for(enterprise) }
+
+            it "lists any variants that are not listed as visible=false" do
+              expect(variants).to include new_variant, visible_variant
+              expect(variants).to_not include hidden_variant
+            end
+
+            context "when inventory items exist for other enterprises" do
+              let(:other_enterprise) { create(:distributor_enterprise) }
+
+              let!(:new_inventory_item) { create(:inventory_item, enterprise: other_enterprise, variant: new_variant, visible: true ) }
+              let!(:hidden_inventory_item2) { create(:inventory_item, enterprise: other_enterprise, variant: visible_variant, visible: false ) }
+              let!(:visible_inventory_item2) { create(:inventory_item, enterprise: other_enterprise, variant: hidden_variant, visible: true ) }
+
+              it "lists any variants that are not listed as visible=false only for the relevant enterprise" do
+                expect(variants).to include new_variant, visible_variant
+                expect(variants).to_not include hidden_variant
+              end
+            end
+          end
+        end
+
+        context "finding variants that are visible in an enterprise's inventory" do
+          let!(:variants) { Spree::Variant.visible_for(enterprise) }
+
+          it "lists any variants that are listed as visible=true" do
+            expect(variants).to include visible_variant
+            expect(variants).to_not include new_variant, hidden_variant
+          end
+        end
+      end
+    end
+
+    describe "callbacks" do
+      let(:variant) { create(:variant) }
+
+      it "refreshes the products cache on save" do
+        expect(OpenFoodNetwork::ProductsCache).to receive(:variant_changed).with(variant)
+        variant.sku = 'abc123'
+        variant.save
+      end
+
+      it "refreshes the products cache on destroy" do
+        expect(OpenFoodNetwork::ProductsCache).to receive(:variant_destroyed).with(variant)
+        variant.destroy
+      end
+
+      context "when it is the master variant" do
+        let(:product) { create(:simple_product) }
+        let(:master) { product.master }
+
+        it "refreshes the products cache for the entire product on save" do
+          expect(OpenFoodNetwork::ProductsCache).to receive(:product_changed).with(product)
+          expect(OpenFoodNetwork::ProductsCache).to receive(:variant_changed).never
+          master.sku = 'abc123'
+          master.save
+        end
+
+        it "refreshes the products cache for the entire product on destroy" do
+          # Does this ever happen?
+          expect(OpenFoodNetwork::ProductsCache).to receive(:product_changed).with(product)
+          expect(OpenFoodNetwork::ProductsCache).to receive(:variant_destroyed).never
+          master.destroy
+        end
+      end
     end
 
     describe "indexing variants by id" do
@@ -115,41 +209,25 @@ module Spree
       end
     end
 
-    describe "generating the full name" do
+    describe "generating the product and variant name" do
       let(:v) { Variant.new }
+      let(:p) { double(:product, name: 'product') }
+      before { allow(v).to receive(:product) { p } }
 
-      before do
-        v.stub(:display_name) { 'display_name' }
-        v.stub(:unit_to_display) { 'unit_to_display' }
+      context "when full_name starts with the product name" do
+        before { allow(v).to receive(:full_name) { p.name + " - something" } }
+
+        it "does not show the product name twice" do
+          v.product_and_full_name.should == 'product - something'
+        end
       end
 
-      it "returns unit_to_display when display_name is blank" do
-        v.stub(:display_name) { '' }
-        v.full_name.should == 'unit_to_display'
-      end
+      context "when full_name does not start with the product name" do
+        before { allow(v).to receive(:full_name) { "display_name (unit)" } }
 
-      it "returns display_name when it contains unit_to_display" do
-        v.stub(:display_name) { 'DiSpLaY_name' }
-        v.stub(:unit_to_display) { 'name' }
-        v.full_name.should == 'DiSpLaY_name'
-      end
-
-      it "returns unit_to_display when it contains display_name" do
-        v.stub(:display_name) { '_to_' }
-        v.stub(:unit_to_display) { 'unit_TO_display' }
-        v.full_name.should == 'unit_TO_display'
-      end
-
-      it "returns a combination otherwise" do
-        v.stub(:display_name) { 'display_name' }
-        v.stub(:unit_to_display) { 'unit_to_display' }
-        v.full_name.should == 'display_name (unit_to_display)'
-      end
-
-      it "is resilient to regex chars" do
-        v = Variant.new display_name: ")))"
-        v.stub(:unit_to_display) { ")))" }
-        v.full_name.should == ")))"
+        it "prepends the product name to the full name" do
+          v.product_and_full_name.should == 'product - display_name (unit)'
+        end
       end
     end
 
@@ -251,6 +329,44 @@ module Spree
     end
 
     describe "unit value/description" do
+      describe "generating the full name" do
+        let(:v) { Variant.new }
+
+        before do
+          v.stub(:display_name) { 'display_name' }
+          v.stub(:unit_to_display) { 'unit_to_display' }
+        end
+
+        it "returns unit_to_display when display_name is blank" do
+          v.stub(:display_name) { '' }
+          v.full_name.should == 'unit_to_display'
+        end
+
+        it "returns display_name when it contains unit_to_display" do
+          v.stub(:display_name) { 'DiSpLaY_name' }
+          v.stub(:unit_to_display) { 'name' }
+          v.full_name.should == 'DiSpLaY_name'
+        end
+
+        it "returns unit_to_display when it contains display_name" do
+          v.stub(:display_name) { '_to_' }
+          v.stub(:unit_to_display) { 'unit_TO_display' }
+          v.full_name.should == 'unit_TO_display'
+        end
+
+        it "returns a combination otherwise" do
+          v.stub(:display_name) { 'display_name' }
+          v.stub(:unit_to_display) { 'unit_to_display' }
+          v.full_name.should == 'display_name (unit_to_display)'
+        end
+
+        it "is resilient to regex chars" do
+          v = Variant.new display_name: ")))"
+          v.stub(:unit_to_display) { ")))" }
+          v.full_name.should == ")))"
+        end
+      end
+
       describe "getting name for display" do
         it "returns display_name if present" do
           v = create(:variant, display_name: "foo")
@@ -316,23 +432,18 @@ module Spree
         end
       end
 
-      context "when the variant already has a value set (and all required option values exist)" do
-        let!(:p0) { create(:simple_product, variant_unit: 'weight', variant_unit_scale: 1) }
-        let!(:v0) { create(:variant, product: p0, unit_value: 10, unit_description: 'foo') }
-
+      context "when the variant already has a value set (and all required option values do not exist)" do
         let!(:p) { create(:simple_product, variant_unit: 'weight', variant_unit_scale: 1) }
         let!(:v) { create(:variant, product: p, unit_value: 5, unit_description: 'bar') }
 
         it "removes the old option value and assigns the new one" do
           ov_orig = v.option_values.last
-          ov_new  = v0.option_values.last
 
           expect {
             v.update_attributes!(unit_value: 10, unit_description: 'foo')
-          }.to change(Spree::OptionValue, :count).by(0)
+          }.to change(Spree::OptionValue, :count).by(1)
 
           v.option_values.should_not include ov_orig
-          v.option_values.should     include ov_new
         end
       end
 

@@ -10,12 +10,25 @@ Darkswarm.factory 'Products', ($resource, Enterprises, Dereferencer, Taxons, Pro
 
     update: =>
       @loading = true
-      @products = $resource("/shop/products").query (products)=>
-        @extend() && @dereference()
+      @products = []
+      $resource("/shop/products").query (products)=>
+        @products = products
+
+        @extend()
+        @dereference()
         @registerVariants()
-        @registerVariantsWithCart()
         @loading = false
-      @
+
+    extend: ->
+      for product in @products
+        if product.variants?.length > 0
+          prices = (v.price for v in product.variants)
+          product.price = Math.min.apply(null, prices)
+        product.hasVariants = product.variants?.length > 0
+
+        product.primaryImage = product.images[0]?.small_url if product.images
+        product.primaryImageOrMissing = product.primaryImage || "/assets/noimage/small.png"
+        product.largeImage = product.images[0]?.large_url if product.images
 
     dereference: ->
       for product in @products
@@ -30,26 +43,7 @@ Darkswarm.factory 'Products', ($resource, Enterprises, Dereferencer, Taxons, Pro
     registerVariants: ->
       for product in @products
         if product.variants
-          product.variants = (Variants.register variant for variant in product.variants)
-          variant.product = product for variant in product.variants
-        if product.master
-          product.master.product = product
-          product.master = Variants.register product.master
-
-    registerVariantsWithCart: ->
-      for product in @products
-        if product.variants
-          for variant in product.variants
-            Cart.register_variant variant
-        Cart.register_variant product.master if product.master
-
-    extend: ->
-      for product in @products
-        if product.variants?.length > 0
-          prices = (v.price for v in product.variants)
-          product.price = Math.min.apply(null, prices)
-        product.hasVariants = product.variants?.length > 0
-
-        product.primaryImage = product.images[0]?.small_url if product.images
-        product.primaryImageOrMissing = product.primaryImage || "/assets/noimage/small.png"
-        product.largeImage = product.images[0]?.large_url if product.images
+          product.variants = for variant in product.variants
+            variant = Variants.register variant
+            variant.product = product
+            variant

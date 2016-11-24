@@ -1,4 +1,4 @@
-require File.expand_path('../boot', __FILE__)
+require_relative 'boot'
 
 require 'rails/all'
 
@@ -28,12 +28,17 @@ module Openfoodnetwork
     initializer "spree.register.calculators" do |app|
       app.config.spree.calculators.shipping_methods << OpenFoodNetwork::Calculator::Weight
 
-      app.config.spree.calculators.enterprise_fees = [Spree::Calculator::FlatPercentItemTotal,
+      app.config.spree.calculators.enterprise_fees = [Calculator::FlatPercentPerItem,
                                                       Spree::Calculator::FlatRate,
                                                       Spree::Calculator::FlexiRate,
                                                       Spree::Calculator::PerItem,
                                                       Spree::Calculator::PriceSack,
                                                       OpenFoodNetwork::Calculator::Weight]
+      app.config.spree.calculators.payment_methods = [Spree::Calculator::FlatPercentItemTotal,
+                                                      Spree::Calculator::FlatRate,
+                                                      Spree::Calculator::FlexiRate,
+                                                      Spree::Calculator::PerItem,
+                                                      Spree::Calculator::PriceSack]
     end
 
     # Register Spree payment methods
@@ -47,7 +52,10 @@ module Openfoodnetwork
     # -- all .rb files in that directory are automatically loaded.
 
     # Custom directories with classes and modules you want to be autoloadable.
-    config.autoload_paths += %W(#{config.root}/app/presenters)
+    config.autoload_paths += %W(
+      #{config.root}/app/presenters
+      #{config.root}/app/jobs
+    )
 
     # Only load the plugins named here, in the order given (default is alphabetical).
     # :all can be used as a placeholder for all plugins not explicitly named.
@@ -63,6 +71,7 @@ module Openfoodnetwork
     # The default locale is :en and all translations from config/locales/*.rb,yml are auto loaded.
     # config.i18n.load_path += Dir[Rails.root.join('my', 'locales', '*.{rb,yml}').to_s]
     config.i18n.default_locale = ENV["LOCALE"]
+    I18n.locale = config.i18n.locale = config.i18n.default_locale
 
     # Setting this to true causes a performance regression in Rails 3.2.17
     # When we're on a version with the fix below, we can set it to true
@@ -91,12 +100,12 @@ module Openfoodnetwork
     # http://stackoverflow.com/questions/8012434/what-is-the-purpose-of-config-assets-precompile
     config.assets.initialize_on_precompile = true
     config.assets.precompile += ['store/all.css', 'store/all.js', 'store/shop_front.js', 'iehack.js']
-    config.assets.precompile += ['admin/all.css', 'admin/restore_spree_from_cms.css', 'admin/*.js', 'admin/**/*.js']
+    config.assets.precompile += ['admin/all.css', 'admin/*.js', 'admin/**/*.js']
     config.assets.precompile += ['darkswarm/all.css', 'darkswarm/all_split2.css', 'darkswarm/all.js']
     config.assets.precompile += ['mail/all.css']
-    config.assets.precompile += ['comfortable_mexican_sofa/*']
     config.assets.precompile += ['search/all.css', 'search/*.js']
     config.assets.precompile += ['shared/*']
 
+    config.active_support.escape_html_entities_in_json = true
   end
 end

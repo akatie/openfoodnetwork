@@ -29,7 +29,7 @@ module WebHelper
 
   def current_path_should_be path
     current_path = URI.parse(current_url).path
-    current_path.should == path
+    expect(page).to have_current_path path
   end
 
   def fill_in_fields(field_values)
@@ -78,7 +78,7 @@ module WebHelper
   end
 
   def flash_message
-    find('.flash').text.strip
+    find('.flash', visible: false).text.strip
   end
 
   def errors
@@ -93,17 +93,9 @@ module WebHelper
     errors.map(&:text)
   end
 
-  def handle_js_confirm(accept=true, debug=false)
+  def handle_js_confirm(accept=true)
     page.evaluate_script "window.confirm = function(msg) { return #{!!accept }; }"
     yield
-  end
-
-  def handle_webdriver_random_failure(retry_times = 3)
-    begin
-      yield
-    rescue Selenium::WebDriver::Error::InvalidSelectorError => e
-      e.message =~ /nsIDOMXPathEvaluator.createNSResolver/ ? (retry if (retry_times -= 1 ) > 0) : raise
-    end
   end
 
   def click_dialog_button(button_content)
@@ -123,11 +115,29 @@ module WebHelper
     DirtyFormDialog.new(page)
   end
 
+  # Fetch the content of a script block
+  # eg. script_content with: 'my-script.com'
+  # Returns nil if not found
+  # Raises an exception if multiple matching blocks are found
+  def script_content(opts={})
+    elems = page.all('script', visible: false)
+
+    elems = elems.to_a.select { |e| e.text(:all).include? opts[:with] }  if opts[:with]
+
+    if elems.none?
+      nil
+    elsif elems.many?
+      raise "Multiple results returned for script_content"
+    else
+      elems.first.text(:all)
+    end
+  end
+
   # http://www.elabs.se/blog/53-why-wait_until-was-removed-from-capybara
   # Do not use this without good reason. Capybara's built-in waiting is very effective.
   def wait_until(secs=nil)
     require "timeout"
-    Timeout.timeout(secs || Capybara.default_wait_time) do
+    Timeout.timeout(secs || Capybara.default_max_wait_time) do
       sleep(0.1) until value = yield
       value
     end
@@ -152,10 +162,16 @@ module WebHelper
     have_selector "div.select2-result-label", text: value
   end
 
+  def open_select2(selector)
+    page.evaluate_script "jQuery('#{selector}').select2('open');"
+  end
+
+  def close_select2(selector)
+    page.evaluate_script "jQuery('#{selector}').select2('close');"
+  end
 
   private
   def wait_for_ajax
     wait_until { page.evaluate_script("$.active") == 0 }
   end
 end
-

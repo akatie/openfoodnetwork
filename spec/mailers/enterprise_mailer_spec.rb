@@ -12,8 +12,9 @@ describe EnterpriseMailer do
       EnterpriseMailer.confirmation_instructions(enterprise, 'token').deliver
       ActionMailer::Base.deliveries.count.should == 1
       mail = ActionMailer::Base.deliveries.first
-      expect(mail.subject).to eq "Please confirm your email for #{enterprise.name}"
+      expect(mail.subject).to eq "Please confirm the email address for #{enterprise.name}"
       expect(mail.to).to include enterprise.email
+      expect(mail.reply_to).to be_nil
     end
   end
 
@@ -27,7 +28,7 @@ describe EnterpriseMailer do
       EnterpriseMailer.confirmation_instructions(enterprise, 'token').deliver
       ActionMailer::Base.deliveries.count.should == 1
       mail = ActionMailer::Base.deliveries.first
-      expect(mail.subject).to eq "Please confirm your email for #{enterprise.name}"
+      expect(mail.subject).to eq "Please confirm the email address for #{enterprise.name}"
       expect(mail.to).to include enterprise.unconfirmed_email
     end
   end

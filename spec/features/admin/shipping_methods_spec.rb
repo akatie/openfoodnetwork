@@ -93,12 +93,16 @@ feature 'shipping methods' do
       fill_in 'shipping_method_name', :with => 'Teleport'
 
       check "shipping_method_distributor_ids_#{distributor1.id}"
+      find(:css, "tags-input .tags input").set "local\n"
+
       click_button 'Create'
 
       flash_message.should == 'Shipping method "Teleport" has been successfully created!'
+      expect(first('tags-input .tag-list ti-tag-item')).to have_content "local"
 
       shipping_method = Spree::ShippingMethod.find_by_name('Teleport')
       shipping_method.distributors.should == [distributor1]
+      shipping_method.tag_list.should == ["local"]
     end
 
     it "shows me only shipping methods I have access to" do
@@ -119,7 +123,7 @@ feature 'shipping methods' do
 
       visit spree.admin_shipping_methods_path
 
-      page.all('td', text: 'Two').count.should == 1
+      page.should have_selector 'td', text: 'Two', count: 1
     end
 
     pending "shows me only shipping methods for the enterprise I select" do

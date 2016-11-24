@@ -91,6 +91,21 @@ describe Exchange do
     end
   end
 
+  describe "products caching" do
+    let!(:exchange) { create(:exchange) }
+
+    it "refreshes the products cache on change" do
+      expect(OpenFoodNetwork::ProductsCache).to receive(:exchange_changed).with(exchange)
+      exchange.pickup_time = 'asdf'
+      exchange.save
+    end
+
+    it "refreshes the products cache on destruction" do
+      expect(OpenFoodNetwork::ProductsCache).to receive(:exchange_destroyed).with(exchange)
+      exchange.destroy
+    end
+  end
+
   describe "scopes" do
     let(:supplier) { create(:supplier_enterprise) }
     let(:coordinator) { create(:distributor_enterprise, is_primary_producer: true) }
@@ -246,6 +261,20 @@ describe Exchange do
 
       Exchange.with_product(p).should == [ex]
     end
+
+    describe "sorting exchanges by primary enterprise name" do
+      let(:e1) { create(:supplier_enterprise,    name: 'ZZZ') }
+      let(:e2) { create(:distributor_enterprise, name: 'AAA') }
+      let(:e3) { create(:supplier_enterprise,    name: 'CCC') }
+
+      let!(:ex1) { create(:exchange, sender:   e1, incoming: true) }
+      let!(:ex2) { create(:exchange, receiver: e2, incoming: false) }
+      let!(:ex3) { create(:exchange, sender:   e3, incoming: true) }
+
+      it "sorts" do
+        Exchange.by_enterprise_name.should == [ex2, ex3, ex1]
+      end
+    end
   end
 
   it "clones itself" do
@@ -253,9 +282,11 @@ describe Exchange do
     new_oc = create(:simple_order_cycle)
 
     ex1 = oc.exchanges.last
+    ex1.update_attribute(:tag_list, "wholesale")
     ex2 = ex1.clone! new_oc
 
     ex1.eql?(ex2).should be_true
+    expect(ex2.reload.tag_list).to eq ["wholesale"]
   end
 
   describe "converting to hash" do
@@ -277,6 +308,7 @@ describe Exchange do
         'payment_enterprise_id' => exchange.payment_enterprise_id, 'variant_ids' => exchange.variant_ids.sort,
         'enterprise_fee_ids' => exchange.enterprise_fee_ids.sort,
         'pickup_time' => exchange.pickup_time, 'pickup_instructions' => exchange.pickup_instructions,
+        'receival_instructions' => exchange.receival_instructions,
         'created_at' => exchange.created_at, 'updated_at' => exchange.updated_at}
     end
 
@@ -286,7 +318,8 @@ describe Exchange do
          'incoming' => exchange.incoming,
          'payment_enterprise_id' => exchange.payment_enterprise_id, 'variant_ids' => exchange.variant_ids.sort,
          'enterprise_fee_ids' => exchange.enterprise_fee_ids.sort,
-         'pickup_time' => exchange.pickup_time, 'pickup_instructions' => exchange.pickup_instructions}
+         'pickup_time' => exchange.pickup_time, 'pickup_instructions' => exchange.pickup_instructions,
+         'receival_instructions' => exchange.receival_instructions}
     end
   end
 

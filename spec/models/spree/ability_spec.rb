@@ -149,13 +149,13 @@ module Spree
 
         it "should be able to read/write their enterprises' products and variants" do
           should have_ability([:admin, :read, :update, :product_distributions, :bulk_edit, :bulk_update, :clone, :destroy], for: p1)
-          should have_ability([:admin, :index, :read, :edit, :update, :search, :destroy], for: p1.master)
+          should have_ability([:admin, :index, :read, :edit, :update, :search, :destroy, :delete], for: p1.master)
         end
 
         it "should be able to read/write related enterprises' products and variants with manage_products permission" do
           er_ps
           should have_ability([:admin, :read, :update, :product_distributions, :bulk_edit, :bulk_update, :clone, :destroy], for: p_related)
-          should have_ability([:admin, :index, :read, :edit, :update, :search, :destroy], for: p_related.master)
+          should have_ability([:admin, :index, :read, :edit, :update, :search, :destroy, :delete], for: p_related.master)
         end
 
         it "should not be able to read/write other enterprises' products and variants" do
@@ -173,7 +173,7 @@ module Spree
 
         it "should be able to read/write their enterprises' product variants" do
           should have_ability([:create], for: Spree::Variant)
-          should have_ability([:admin, :index, :read, :create, :edit, :search, :update, :destroy], for: p1.master)
+          should have_ability([:admin, :index, :read, :create, :edit, :search, :update, :destroy, :delete], for: p1.master)
         end
 
         it "should not be able to read/write other enterprises' product variants" do
@@ -217,7 +217,7 @@ module Spree
         end
 
         it "should not be able to read other reports" do
-          should_not have_ability([:sales_total, :group_buys, :payments, :orders_and_distributors, :users_and_enterprises], for: :report)
+          should_not have_ability([:sales_total, :group_buys, :payments, :orders_and_distributors, :users_and_enterprises, :xero_invoices], for: :report)
         end
 
         it "should not be able to access customer actions" do
@@ -323,7 +323,7 @@ module Spree
           let!(:er1) { create(:enterprise_relationship, parent: s1, child: d1, permissions_list: [:create_variant_overrides]) }
 
           it "should be able to access variant overrides page" do
-            should have_ability([:admin, :index, :bulk_update], for: VariantOverride)
+            should have_ability([:admin, :index, :bulk_update, :bulk_reset], for: VariantOverride)
           end
 
           it "should be able to read/write their own variant overrides" do
@@ -404,7 +404,7 @@ module Spree
         end
 
         it "should be able to read some reports" do
-          should have_ability([:admin, :index, :customers, :sales_tax, :group_buys, :bulk_coop, :payments, :orders_and_distributors, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management], for: :report)
+          should have_ability([:admin, :index, :customers, :sales_tax, :group_buys, :bulk_coop, :payments, :orders_and_distributors, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :xero_invoices], for: :report)
         end
 
         it "should not be able to read other reports" do
@@ -477,6 +477,10 @@ module Spree
           user
         end
 
+        it 'should have the ability to view the admin account page' do
+          should have_ability([:admin, :show], for: :account)
+        end
+
         it 'should have the ability to read and edit enterprises that I manage' do
           should have_ability([:read, :edit, :update, :bulk_update], for: s1)
         end
@@ -494,7 +498,7 @@ module Spree
         end
 
         it "should have the ability to search for users which share management of its enterprises" do
-          should have_ability([:admin, :known_users], for: :search)
+          should have_ability([:admin, :known_users, :customers], for: :search)
           should_not have_ability([:users], for: :search)
         end
       end
@@ -504,6 +508,10 @@ module Spree
 
         it 'should have the ability to welcome and register enterprises that I own' do
           should have_ability([:welcome, :register], for: s1)
+        end
+
+        it 'should have the ability to view the admin account page' do
+          should have_ability([:admin, :show], for: :account)
         end
       end
     end

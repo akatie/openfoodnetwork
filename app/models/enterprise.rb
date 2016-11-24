@@ -1,15 +1,21 @@
 class Enterprise < ActiveRecord::Base
   SELLS = %w(unspecified none own any)
-  SHOP_TRIAL_LENGTH = 30
   ENTERPRISE_SEARCH_RADIUS = 100
 
   preference :shopfront_message, :text, default: ""
   preference :shopfront_closed_message, :text, default: ""
   preference :shopfront_taxon_order, :string, default: ""
+  preference :shopfront_order_cycle_order, :string, default: "orders_close_at"
+
+  # This is hopefully a temporary measure, pending the arrival of multiple named inventories
+  # for shops. We need this here to allow hubs to restrict visible variants to only those in
+  # their inventory if they so choose
+  preference :product_selection_from_inventory_only, :boolean, default: false
 
   devise :confirmable, reconfirmable: true, confirmation_keys: [ :id, :email ]
   handle_asynchronously :send_confirmation_instructions
   handle_asynchronously :send_on_create_confirmation_instructions
+  has_paper_trail only: [:owner_id, :sells], on: [:update]
 
   self.inheritance_column = nil
 
@@ -33,11 +39,15 @@ class Enterprise < ActiveRecord::Base
   has_many :distributor_shipping_methods, foreign_key: :distributor_id
   has_many :shipping_methods, through: :distributor_shipping_methods
   has_many :customers
+  has_many :billable_periods
+  has_many :inventory_items
+  has_many :tag_rules
 
   delegate :latitude, :longitude, :city, :state_name, :to => :address
 
   accepts_nested_attributes_for :address
   accepts_nested_attributes_for :producer_properties, allow_destroy: true, reject_if: lambda { |pp| pp[:property_name].blank? }
+  accepts_nested_attributes_for :tag_rules, allow_destroy: true, reject_if: lambda { |tag_rule| tag_rule[:preferred_customer_tags].blank? }
 
   has_attached_file :logo,
     styles: { medium: "300x300>", small: "180x180>", thumb: "100x100>" },
@@ -68,10 +78,12 @@ class Enterprise < ActiveRecord::Base
   validate :enforce_ownership_limit, if: lambda { owner_id_changed? && !owner_id.nil? }
   validates_length_of :description, :maximum => 255
 
+
   before_save :confirmation_check, if: lambda { email_changed? }
 
   before_validation :initialize_permalink, if: lambda { permalink.nil? }
   before_validation :ensure_owner_is_manager, if: lambda { owner_id_changed? && !owner_id.nil? }
+  before_validation :ensure_email_set
   before_validation :set_unused_address_fields
   after_validation :geocode_address
 
@@ -81,6 +93,7 @@ class Enterprise < ActiveRecord::Base
   after_create :send_welcome_email, if: lambda { email_is_known? }
 
   after_rollback :restore_permalink
+
 
   scope :by_name, order('name')
   scope :visible, where(visible: true)
@@ -109,12 +122,12 @@ class Enterprise < ActiveRecord::Base
   scope :supplying_variant_in, lambda { |variants| joins(:supplied_products => :variants_including_master).where('spree_variants.id IN (?)', variants).select('DISTINCT enterprises.*') }
   scope :with_supplied_active_products_on_hand, lambda {
     joins(:supplied_products)
-      .where('spree_products.deleted_at IS NULL AND spree_products.available_on <= ? AND spree_products.count_on_hand > 0', Time.now)
+      .where('spree_products.deleted_at IS NULL AND spree_products.available_on <= ? AND spree_products.count_on_hand > 0', Time.zone.now)
       .uniq
   }
   scope :with_distributed_active_products_on_hand, lambda {
     joins(:distributed_products)
-      .where('spree_products.deleted_at IS NULL AND spree_products.available_on <= ? AND spree_products.count_on_hand > 0', Time.now)
+      .where('spree_products.deleted_at IS NULL AND spree_products.available_on <= ? AND spree_products.count_on_hand > 0', Time.zone.now)
       .uniq
   }
 
@@ -138,7 +151,7 @@ class Enterprise < ActiveRecord::Base
 
   scope :active_distributors, lambda {
     with_distributed_products_outer.with_order_cycles_as_distributor_outer.
-    where('(product_distributions.product_id IS NOT NULL AND spree_products.deleted_at IS NULL AND spree_products.available_on <= ? AND spree_products.count_on_hand > 0) OR (order_cycles.id IS NOT NULL AND order_cycles.orders_open_at <= ? AND order_cycles.orders_close_at >= ?)', Time.now, Time.now, Time.now).
+    where('(product_distributions.product_id IS NOT NULL AND spree_products.deleted_at IS NULL AND spree_products.available_on <= ? AND spree_products.count_on_hand > 0) OR (order_cycles.id IS NOT NULL AND order_cycles.orders_open_at <= ? AND order_cycles.orders_close_at >= ?)', Time.zone.now, Time.zone.now, Time.zone.now).
     select('DISTINCT enterprises.*')
   }
 
@@ -162,20 +175,19 @@ class Enterprise < ActiveRecord::Base
     if user.has_spree_role?('admin')
       scoped
     else
-      joins(:enterprise_roles).where('enterprise_roles.user_id = ?', user.id).select("DISTINCT enterprises.*")
+      joins(:enterprise_roles).where('enterprise_roles.user_id = ?', user.id)
     end
   }
-
-  def self.find_near(suburb)
-    enterprises = []
-
-    unless suburb.nil?
-      addresses = Spree::Address.near([suburb.latitude, suburb.longitude], ENTERPRISE_SEARCH_RADIUS, :units => :km).joins(:enterprise).limit(10)
-      enterprises = addresses.collect(&:enterprise)
-    end
-
-    enterprises
-  end
+  scope :relatives_of_one_union_others, lambda { |one, others|
+    where("
+      enterprises.id IN
+        (SELECT child_id FROM enterprise_relationships WHERE enterprise_relationships.parent_id=?)
+      OR enterprises.id IN
+        (SELECT parent_id FROM enterprise_relationships WHERE enterprise_relationships.child_id=?)
+      OR enterprises.id IN
+        (?)
+    ", one, one, others)
+  }
 
   # Force a distinct count to work around relation count issue https://github.com/rails/rails/issues/5554
   def self.distinct_count
@@ -220,6 +232,11 @@ class Enterprise < ActiveRecord::Base
     ", self.id, self.id)
   end
 
+  def plus_relatives_and_oc_producers(order_cycles)
+    oc_producer_ids = Exchange.in_order_cycle(order_cycles).incoming.pluck :sender_id
+    Enterprise.relatives_of_one_union_others(id, oc_producer_ids | [id])
+  end
+
   def relatives_including_self
     Enterprise.where(id: relatives.pluck(:id) | [id])
   end
@@ -242,6 +259,14 @@ class Enterprise < ActiveRecord::Base
 
   def linkedin
     strip_url read_attribute(:linkedin)
+  end
+
+  def inventory_variants
+    if prefers_product_selection_from_inventory_only?
+      Spree::Variant.visible_for(self)
+    else
+      Spree::Variant.not_hidden_for(self)
+    end
   end
 
   def distributed_variants
@@ -328,6 +353,14 @@ class Enterprise < ActiveRecord::Base
     !confirmed? || pending_reconfirmation?
   end
 
+  def shop_trial_expiry
+    shop_trial_start_date.andand + Spree::Config[:shop_trial_length_days].days
+  end
+
+  def can_invoice?
+    abn.present?
+  end
+
   protected
 
   def devise_mailer
@@ -382,6 +415,10 @@ class Enterprise < ActiveRecord::Base
 
   def ensure_owner_is_manager
     users << owner unless users.include?(owner) || owner.admin?
+  end
+
+  def ensure_email_set
+    self.email = owner.email if email.blank? && owner.present?
   end
 
   def enforce_ownership_limit

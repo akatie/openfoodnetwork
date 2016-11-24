@@ -1,6 +1,7 @@
 require 'open_food_network/enterprise_fee_calculator'
 require 'open_food_network/distribution_change_validator'
 require 'open_food_network/feature_toggle'
+require 'open_food_network/tag_rule_applicator'
 
 ActiveSupport::Notifications.subscribe('spree.order.contents_changed') do |name, start, finish, id, payload|
   payload[:order].reload.update_distribution_charge!
@@ -17,7 +18,8 @@ Spree::Order.class_eval do
   attr_accessible :order_cycle_id, :distributor_id
 
   before_validation :shipping_address_from_distributor
-  before_validation :associate_customer, unless: :customer_is_valid?
+  before_validation :associate_customer, unless: :customer_id?
+  before_validation :ensure_customer, unless: :customer_is_valid?
 
   checkout_flow do
     go_to_state :address
@@ -33,7 +35,7 @@ Spree::Order.class_eval do
       order.payment_required?
     }
     go_to_state :confirm, :if => lambda { |order| order.confirmation_required? }
-    go_to_state :complete, :if => lambda { |order| (order.payment_required? && order.has_unprocessed_payments?) || !order.payment_required? }
+    go_to_state :complete
     remove_transition :from => :delivery, :to => :confirm
   end
 
@@ -69,21 +71,10 @@ Spree::Order.class_eval do
     where("state != ?", state)
   }
 
-  scope :with_payment_method_name, lambda { |payment_method_name|
-    joins(:payments => :payment_method).
-      where('spree_payment_methods.name IN (?)', payment_method_name).
-      select('DISTINCT spree_orders.*')
-  }
-
-
   # -- Methods
   def products_available_from_new_distribution
     # Check that the line_items in the current order are available from a newly selected distribution
-    if OpenFoodNetwork::FeatureToggle.enabled? :order_cycles
-      errors.add(:base, "Distributor or order cycle cannot supply the products in your cart") unless DistributionChangeValidator.new(self).can_change_to_distribution?(distributor, order_cycle)
-    else
-      errors.add(:distributor_id, "cannot supply the products in your cart") unless DistributionChangeValidator.new(self).can_change_to_distributor?(distributor)
-    end
+    errors.add(:base, "Distributor or order cycle cannot supply the products in your cart") unless DistributionChangeValidator.new(self).can_change_to_distribution?(distributor, order_cycle)
   end
 
   def empty_with_clear_shipping_and_payments!
@@ -101,6 +92,13 @@ Spree::Order.class_eval do
       save!
     end
   end
+
+  def remove_variant(variant)
+    line_items(:reload)
+    current_item = find_line_item_by_variant(variant)
+    current_item.andand.destroy
+  end
+
 
   # Overridden to support max_quantity
   def add_variant(variant, quantity = 1, max_quantity = nil, currency = nil)
@@ -130,7 +128,6 @@ Spree::Order.class_eval do
     else
       current_item = Spree::LineItem.new(:quantity => quantity, max_quantity: max_quantity)
       current_item.variant = variant
-      current_item.unit_value = variant.unit_value
       if currency
         current_item.currency = currency unless currency.nil?
         current_item.price    = variant.price_in(currency).amount
@@ -143,6 +140,11 @@ Spree::Order.class_eval do
     self.reload
     current_item
   end
+
+  def cap_quantity_at_stock!
+    line_items.each &:cap_quantity_at_stock!
+  end
+
 
   def set_distributor!(distributor)
     self.distributor = distributor
@@ -197,11 +199,8 @@ Spree::Order.class_eval do
     adjustments.eligible.where("originator_type = ? AND source_type != ?", 'EnterpriseFee', 'Spree::LineItem').sum(&:amount)
   end
 
-  # Show payment methods for this distributor
-  def available_payment_methods
-    @available_payment_methods ||= Spree::PaymentMethod.available(:front_end).select do |pm|
-      (self.distributor && (pm.distributors.include? self.distributor))
-    end
+  def payment_fee
+    adjustments.payment_fee.map(&:amount).sum
   end
 
   # Does this order have shipments that can be shipped?
@@ -216,10 +215,6 @@ Spree::Order.class_eval do
     end
   end
 
-  def available_shipping_methods(display_on = nil)
-    Spree::ShippingMethod.all_available(self, display_on)
-  end
-
   def shipping_tax
     adjustments(:reload).shipping.sum &:included_tax
   end
@@ -232,9 +227,16 @@ Spree::Order.class_eval do
     (adjustments + price_adjustments).sum &:included_tax
   end
 
+  def account_invoice?
+    distributor_id == Spree::Config.accounts_distributor_id
+  end
+
   # Overrride of Spree method, that allows us to send separate confirmation emails to user and shop owners
+  # And separately, to skip sending confirmation email completely for user invoice orders
   def deliver_order_confirmation_email
-    Delayed::Job.enqueue ConfirmOrderJob.new(id)
+    unless account_invoice?
+      Delayed::Job.enqueue ConfirmOrderJob.new(id)
+    end
   end
 
 
@@ -273,17 +275,22 @@ Spree::Order.class_eval do
 
   def customer_is_valid?
     return true unless require_customer?
-    customer.present? && customer.enterprise_id == distributor_id && customer.email == (user.andand.email || email)
+    customer.present? && customer.enterprise_id == distributor_id && customer.email == email_for_customer
+  end
+
+  def email_for_customer
+    (user.andand.email || email).andand.downcase
   end
 
   def associate_customer
-    email_for_customer = user.andand.email || email
-    existing_customer = Customer.of(distributor).find_by_email(email_for_customer)
-    if existing_customer
-      self.customer = existing_customer
-    else
-      new_customer = Customer.create(enterprise: distributor, email: email_for_customer, user: user)
-      self.customer = new_customer
+    return customer if customer.present?
+    self.customer = Customer.of(distributor).find_by_email(email_for_customer)
+  end
+
+  def ensure_customer
+    unless associate_customer
+      customer_name = bill_address.andand.full_name
+      self.customer = Customer.create(enterprise: distributor, email: email_for_customer, user: user, name: customer_name, bill_address: bill_address.andand.clone, ship_address: ship_address.andand.clone)
     end
   end
 end

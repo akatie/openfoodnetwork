@@ -1,5 +1,38 @@
 module Spree
   Payment.class_eval do
+    has_one :adjustment, as: :source, dependent: :destroy
+
+    after_save :ensure_correct_adjustment, :update_order
+
+    def ensure_correct_adjustment
+      # Don't charge for invalid payments.
+      # PayPalExpress always creates a payment that is invalidated later.
+      # Unknown: What about failed payments?
+      if state == "invalid"
+        adjustment.andand.destroy
+      elsif adjustment
+        adjustment.originator = payment_method
+        adjustment.label = adjustment_label
+        adjustment.save
+      else
+        payment_method.create_adjustment(adjustment_label, order, self, true)
+        reload
+      end
+    end
+
+    def adjustment_label
+      I18n.t('payment_method_fee')
+    end
+
+    # This is called by the calculator of a payment method
+    def line_items
+      if order.complete? && Spree::Config[:track_inventory_levels]
+        order.line_items.select { |li| inventory_units.pluck(:variant_id).include?(li.variant_id) }
+      else
+        order.line_items
+      end
+    end
+
     # Pin payments lacks void and credit methods, but it does have refund
     # Here we swap credit out for refund and remove void as a possible action
     def actions_with_pin_payment_adaptations

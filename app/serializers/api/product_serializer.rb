@@ -34,8 +34,9 @@ end
 class Api::CachedProductSerializer < ActiveModel::Serializer
   #cached
   #delegate :cache_key, to: :object
+  include ActionView::Helpers::SanitizeHelper
 
-  attributes :id, :name, :permalink, :count_on_hand
+  attributes :id, :name, :permalink
   attributes :on_demand, :group_buy, :notes, :description
   attributes :properties_with_values
 
@@ -47,6 +48,10 @@ class Api::CachedProductSerializer < ActiveModel::Serializer
 
   has_many :images, serializer: Api::ImageSerializer
   has_one :supplier, serializer: Api::IdSerializer
+
+  def description
+    strip_tags object.description
+  end
 
   def properties_with_values
     object.properties_including_inherited

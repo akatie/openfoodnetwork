@@ -47,7 +47,7 @@ feature %q{
 
     fill_in 'enterprise_contact', :with => 'Kirsten or Ren'
     fill_in 'enterprise_phone', :with => '0413 897 321'
-    fill_in 'enterprise_email', :with => 'info@eaterprises.com.au'
+    fill_in 'enterprise_email_address', :with => 'info@eaterprises.com.au'
     fill_in 'enterprise_website', :with => 'http://eaterprises.com.au'
 
     fill_in 'enterprise_address_attributes_address1', :with => '35 Ballantyne St'
@@ -61,6 +61,9 @@ feature %q{
   end
 
   scenario "editing an existing enterprise", js: true do
+    # Make the page long enough to avoid the save bar overlaying the form
+    page.driver.resize(1280, 1000)
+
     @enterprise = create(:enterprise)
     e2 = create(:enterprise)
     eg1 = create(:enterprise_group, name: 'eg1')
@@ -74,7 +77,7 @@ feature %q{
 
     visit '/admin/enterprises'
     within "tr.enterprise-#{@enterprise.id}" do
-      all("a", text: 'Edit Profile').first.click
+      first("a", text: 'Edit Profile').trigger 'click'
     end
 
     fill_in 'enterprise_name', :with => 'Eaterprises'
@@ -82,13 +85,26 @@ feature %q{
     page.should have_selector '.available'
     choose 'Own'
 
+    # Require login to view shopfront or for checkout
+    within(".side_menu") { click_link "Shop Preferences" }
+    expect(page).to have_checked_field "enterprise_require_login_false"
+    expect(page).to have_checked_field "enterprise_allow_guest_orders_true"
+    choose "Visible to registered customers only"
+    expect(page).to have_no_checked_field "enterprise_require_login_false"
+
     within (".side_menu") { click_link "Users" }
     select2_search user.email, from: 'Owner'
 
     click_link "About"
     fill_in 'enterprise_description', :with => 'Connecting farmers and eaters'
-    long_description = find :css, "text-angular#enterprise_long_description div.ta-scroll-window div.ta-bind"
-    long_description.set 'This is an interesting long description'
+
+    # TODO: Directly altering the text in the contenteditable div like this started breaking with the upgrade
+    # of Poltergeist from 1.5 to 1.7. Probably requires an upgrade of AngularJS and/or TextAngular
+    # long_description = find :css, "text-angular#enterprise_long_description div.ta-scroll-window div.ta-bind"
+    # long_description.set 'This is an interesting long description'
+    # long_description.native.send_keys(:Enter) # Sets the value
+
+    page.first("input[name='enterprise\[long_description\]']", visible: false).set('This is an interesting long description')
 
     # Check Angularjs switching of sidebar elements
     click_link "Primary Details"
@@ -124,7 +140,7 @@ feature %q{
     click_link "Contact"
     fill_in 'enterprise_contact', :with => 'Kirsten or Ren'
     fill_in 'enterprise_phone', :with => '0413 897 321'
-    fill_in 'enterprise_email', :with => 'info@eaterprises.com.au'
+    fill_in 'enterprise_email_address', :with => 'info@eaterprises.com.au'
     fill_in 'enterprise_website', :with => 'http://eaterprises.com.au'
 
     click_link "Social"
@@ -143,8 +159,12 @@ feature %q{
     select2_search 'Victoria', :from => 'State'
 
     click_link "Shop Preferences"
-    shopfront_message = find :css, "text-angular#enterprise_preferred_shopfront_message div.ta-scroll-window div.ta-bind"
-    shopfront_message.set 'This is my shopfront message.'
+    # TODO: Same as above
+    # shopfront_message = find :css, "text-angular#enterprise_preferred_shopfront_message div.ta-scroll-window div.ta-bind"
+    # shopfront_message.set 'This is my shopfront message.'
+    page.first("input[name='enterprise\[preferred_shopfront_message\]']", visible: false).set('This is my shopfront message.')
+    page.should have_checked_field "enterprise_preferred_shopfront_order_cycle_order_orders_close_at"
+    choose "enterprise_preferred_shopfront_order_cycle_order_orders_open_at"
 
     click_button 'Update'
 
@@ -152,6 +172,7 @@ feature %q{
     page.should have_field 'enterprise_name', :with => 'Eaterprises'
     @enterprise.reload
     expect(@enterprise.owner).to eq user
+    expect(page).to have_checked_field "enterprise_visible_true"
 
     click_link "Business Details"
     page.should have_checked_field "enterprise_charges_sales_tax_true"
@@ -170,6 +191,8 @@ feature %q{
 
     click_link "Shop Preferences"
     page.should have_content 'This is my shopfront message.'
+    page.should have_checked_field "enterprise_preferred_shopfront_order_cycle_order_orders_open_at"
+    expect(page).to have_checked_field "enterprise_require_login_true"
   end
 
   describe "producer properties" do
@@ -187,8 +210,8 @@ feature %q{
       fill_in 'enterprise_producer_properties_attributes_0_value', with: "NASAA 12345"
       click_button 'Update'
 
-      # Then I should be returned to the enterprises page
-      page.should have_selector '#listing_enterprises a', text: s.name
+      # Then I should remain on the producer properties page
+      expect(current_path).to eq main_app.admin_enterprise_producer_properties_path(s)
 
       # And the producer should have the property
       s.producer_properties(true).count.should == 1
@@ -210,8 +233,8 @@ feature %q{
       fill_in 'enterprise_producer_properties_attributes_0_value', with: "Shininess"
       click_button 'Update'
 
-      # Then I should be returned to the enterprises
-      page.should have_selector '#listing_enterprises a', text: s.name
+      # Then I should remain on the producer properties page
+      expect(current_path).to eq main_app.admin_enterprise_producer_properties_path(s)
 
       # And the property should be updated
       s.producer_properties(true).count.should == 1
@@ -231,14 +254,40 @@ feature %q{
       # And I remove the property
       page.should have_field 'enterprise_producer_properties_attributes_0_property_name', with: 'Certified Organic'
       within("#spree_producer_property_#{pp.id}") { page.find('a.remove_fields').click }
+      click_button 'Update'
 
       # Then the property should have been removed
-      page.should_not have_selector '#progress'
+      expect(current_path).to eq main_app.admin_enterprise_producer_properties_path(s)
       page.should_not have_field 'enterprise_producer_properties_attributes_0_property_name', with: 'Certified Organic'
       s.producer_properties(true).should be_empty
     end
   end
 
+
+  describe "inventory settings", js: true do
+    let!(:enterprise) { create(:distributor_enterprise) }
+    let!(:product) { create(:simple_product) }
+    let!(:order_cycle) { create(:simple_order_cycle, distributors: [enterprise], variants: [product.variants.first]) }
+
+    before do
+      Delayed::Job.destroy_all
+      quick_login_as_admin
+    end
+
+    it "refreshes the cache when I change what products appear on my shopfront" do
+      # Given a product that's not in my inventory, but is in an active order cycle
+
+      # When I change which products appear on the shopfront
+      visit edit_admin_enterprise_path(enterprise)
+      within(".side_menu") { click_link 'Inventory Settings' }
+      choose 'enterprise_preferred_product_selection_from_inventory_only_1'
+
+      # Then a job should have been enqueued to refresh the cache
+      expect do
+        click_button 'Update'
+      end.to enqueue_job RefreshProductsCacheJob, distributor_id: enterprise.id, order_cycle_id: order_cycle.id
+    end
+  end
 
   context "as an Enterprise user", js: true do
     let(:supplier1) { create(:supplier_enterprise, name: 'First Supplier') }
@@ -275,7 +324,7 @@ feature %q{
         click_link 'Enterprises'
         click_link 'New Enterprise'
         fill_in 'enterprise_name', with: 'zzz'
-        fill_in 'enterprise_email', with: 'bob@example.com'
+        fill_in 'enterprise_email_address', with: 'bob@example.com'
         fill_in 'enterprise_address_attributes_address1', with: 'z'
         fill_in 'enterprise_address_attributes_city', with: 'z'
         fill_in 'enterprise_address_attributes_zipcode', with: 'z'
@@ -313,6 +362,10 @@ feature %q{
       within("tbody#e_#{distributor1.id}") { click_link 'Manage' }
 
       fill_in 'enterprise_name', :with => 'Eaterprises'
+
+      # Because poltergist does not support form onchange event
+      # We need trigger the change manually
+      page.evaluate_script("angular.element(enterprise_form).scope().setFormDirty()")
       click_button 'Update'
 
       flash_message.should == 'Enterprise "Eaterprises" has been successfully updated!'
@@ -325,6 +378,10 @@ feature %q{
         within("tbody#e_#{distributor3.id}") { click_link 'Manage' }
 
         fill_in 'enterprise_name', :with => 'Eaterprises'
+
+        # Because poltergist does not support form onchange event
+        # We need trigger the change manually
+        page.evaluate_script("angular.element(enterprise_form).scope().setFormDirty()")
         click_button 'Update'
 
         flash_message.should == 'Enterprise "Eaterprises" has been successfully updated!'
@@ -365,8 +422,14 @@ feature %q{
 
       # -- Update only
       select2_select "Certified Organic", from: 'enterprise_producer_properties_attributes_0_property_name'
+
       fill_in 'enterprise_producer_properties_attributes_0_value', with: "NASAA 12345"
+
+      # Because poltergist does not support form onchange event
+      # We need trigger the change manually
+      page.evaluate_script("angular.element(enterprise_form).scope().setFormDirty()")
       click_button 'Update'
+
       supplier1.producer_properties(true).count.should == 1
 
       # -- Destroy
@@ -376,7 +439,10 @@ feature %q{
       end
 
       within("#spree_producer_property_#{pp.id}") { page.find('a.remove_fields').click }
-      page.should_not have_selector '#progress'
+
+      click_button 'Update'
+
+      expect(page).to have_content 'Enterprise "First Supplier" has been successfully updated!'
       supplier1.producer_properties(true).should be_empty
     end
   end

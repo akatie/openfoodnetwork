@@ -5,7 +5,7 @@ describe 'Checkout service', ->
   Navigation = null
   flash = null
   scope = null
-  FlashLoaderMock = 
+  FlashLoaderMock =
     loadFlash: (arg)->
   paymentMethods = [{
       id: 99
@@ -30,6 +30,7 @@ describe 'Checkout service', ->
   beforeEach ->
     orderData =
       id: 3102
+      shipping_method_id: null
       payment_method_id: null
       email: "test@test.com"
       bill_address:
@@ -41,10 +42,10 @@ describe 'Checkout service', ->
 
     module 'Darkswarm'
     module ($provide)->
-      $provide.value "RailsFlashLoader", FlashLoaderMock 
-      $provide.value "currentOrder", orderData 
-      $provide.value "shippingMethods", shippingMethods 
-      $provide.value "paymentMethods", paymentMethods 
+      $provide.value "RailsFlashLoader", FlashLoaderMock
+      $provide.value "currentOrder", orderData
+      $provide.value "shippingMethods", shippingMethods
+      $provide.value "paymentMethods", paymentMethods
       null
 
     inject ($injector, _$httpBackend_, $rootScope)->
@@ -78,28 +79,35 @@ describe 'Checkout service', ->
       expect(Checkout.shippingPrice()).toEqual 13
 
   it 'Gets the current payment method', ->
-    expect(Checkout.paymentMethod()).toEqual null
+    expect(Checkout.paymentMethod()).toBeUndefined()
     Checkout.order.payment_method_id = 99
-    expect(Checkout.paymentMethod()).toEqual paymentMethods[0] 
+    expect(Checkout.paymentMethod()).toEqual paymentMethods[0]
 
   it "Posts the Checkout to the server", ->
     $httpBackend.expectPUT("/checkout", {order: Checkout.preprocess()}).respond 200, {path: "test"}
     Checkout.submit()
     $httpBackend.flush()
 
-  it "sends flash messages to the flash service", ->
-    spyOn(FlashLoaderMock, "loadFlash") # Stubbing out writes to window.location
-    $httpBackend.expectPUT("/checkout").respond 400, {flash: {error: "frogs"}}
-    Checkout.submit()
+  describe "when there is an error", ->
+    it "redirects when a redirect is given", ->
+      $httpBackend.expectPUT("/checkout").respond 400, {path: 'path'}
+      Checkout.submit()
+      $httpBackend.flush()
+      expect(Navigation.go).toHaveBeenCalledWith 'path'
 
-    $httpBackend.flush()
-    expect(FlashLoaderMock.loadFlash).toHaveBeenCalledWith {error: "frogs"}
+    it "sends flash messages to the flash service", ->
+      spyOn(FlashLoaderMock, "loadFlash") # Stubbing out writes to window.location
+      $httpBackend.expectPUT("/checkout").respond 400, {flash: {error: "frogs"}}
+      Checkout.submit()
 
-  it "puts errors into the scope", ->
-    $httpBackend.expectPUT("/checkout").respond 400, {errors: {error: "frogs"}}
-    Checkout.submit()
-    $httpBackend.flush()
-    expect(Checkout.errors).toEqual {error: "frogs"}
+      $httpBackend.flush()
+      expect(FlashLoaderMock.loadFlash).toHaveBeenCalledWith {error: "frogs"}
+
+    it "puts errors into the scope", ->
+      $httpBackend.expectPUT("/checkout").respond 400, {errors: {error: "frogs"}}
+      Checkout.submit()
+      $httpBackend.flush()
+      expect(Checkout.errors).toEqual {error: "frogs"}
 
   describe "data preprocessing", ->
     beforeEach ->
@@ -122,6 +130,16 @@ describe 'Checkout service', ->
       expect(Checkout.preprocess().ship_address_attributes).toEqual(orderData.ship_address)
       Checkout.ship_address_same_as_billing = true
       expect(Checkout.preprocess().ship_address_attributes).toEqual(orderData.bill_address)
+
+    it "munges the default as billing address and shipping address", ->
+      expect(Checkout.preprocess().default_bill_address).toEqual(false)
+      expect(Checkout.preprocess().default_ship_address).toEqual(false)
+
+      Checkout.default_bill_address = true
+      Checkout.default_ship_address = true
+
+      expect(Checkout.preprocess().default_bill_address).toEqual(true)
+      expect(Checkout.preprocess().default_ship_address).toEqual(true)
 
     it "creates attributes for card fields", ->
       source_attributes = Checkout.preprocess().payments_attributes[0].source_attributes

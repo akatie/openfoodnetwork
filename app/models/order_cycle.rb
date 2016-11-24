@@ -1,6 +1,8 @@
 class OrderCycle < ActiveRecord::Base
   belongs_to :coordinator, :class_name => 'Enterprise'
-  has_and_belongs_to_many :coordinator_fees, :class_name => 'EnterpriseFee', :join_table => 'coordinator_fees'
+
+  has_many :coordinator_fee_refs, class_name: 'CoordinatorFee'
+  has_many :coordinator_fees, through: :coordinator_fee_refs, source: :enterprise_fee
 
   has_many :exchanges, :dependent => :destroy
 
@@ -11,23 +13,26 @@ class OrderCycle < ActiveRecord::Base
 
   validates_presence_of :name, :coordinator_id
 
-  scope :active, lambda { where('order_cycles.orders_open_at <= ? AND order_cycles.orders_close_at >= ?', Time.now, Time.now) }
-  scope :active_or_complete, lambda { where('order_cycles.orders_open_at <= ?', Time.now) }
-  scope :inactive, lambda { where('order_cycles.orders_open_at > ? OR order_cycles.orders_close_at < ?', Time.now, Time.now) }
-  scope :upcoming, lambda { where('order_cycles.orders_open_at > ?', Time.now) }
-  scope :closed, lambda { where('order_cycles.orders_close_at < ?', Time.now) }
-  scope :undated, where(orders_open_at: nil, orders_close_at: nil)
+  after_save :refresh_products_cache
+
+  preference :product_selection_from_coordinator_inventory_only, :boolean, default: false
+
+  scope :active, lambda { where('order_cycles.orders_open_at <= ? AND order_cycles.orders_close_at >= ?', Time.zone.now, Time.zone.now) }
+  scope :active_or_complete, lambda { where('order_cycles.orders_open_at <= ?', Time.zone.now) }
+  scope :inactive, lambda { where('order_cycles.orders_open_at > ? OR order_cycles.orders_close_at < ?', Time.zone.now, Time.zone.now) }
+  scope :upcoming, lambda { where('order_cycles.orders_open_at > ?', Time.zone.now) }
+  scope :not_closed, lambda { where('order_cycles.orders_close_at > ? OR order_cycles.orders_close_at IS NULL', Time.zone.now) }
+  scope :closed, lambda { where('order_cycles.orders_close_at < ?', Time.zone.now).order("order_cycles.orders_close_at DESC") }
+  scope :undated, where('order_cycles.orders_open_at IS NULL OR orders_close_at IS NULL')
+  scope :dated, where('orders_open_at IS NOT NULL AND orders_close_at IS NOT NULL')
 
   scope :soonest_closing,      lambda { active.order('order_cycles.orders_close_at ASC') }
   # TODO This method returns all the closed orders. So maybe we can replace it with :recently_closed.
   scope :most_recently_closed, lambda { closed.order('order_cycles.orders_close_at DESC') }
 
-  scope :recently_closed, -> {
-    closed.
-    where("order_cycles.orders_close_at >= ?", 31.days.ago).
-    order("order_cycles.orders_close_at DESC") }
-
   scope :soonest_opening,      lambda { upcoming.order('order_cycles.orders_open_at ASC') }
+
+  scope :by_name, order('name')
 
   scope :distributing_product, lambda { |product|
     joins(:exchanges).
@@ -116,6 +121,7 @@ class OrderCycle < ActiveRecord::Base
     oc.name = "COPY OF #{oc.name}"
     oc.orders_open_at = oc.orders_close_at = nil
     oc.coordinator_fee_ids = self.coordinator_fee_ids
+    oc.preferred_product_selection_from_coordinator_inventory_only = self.preferred_product_selection_from_coordinator_inventory_only
     oc.save!
     self.exchanges.each { |e| e.clone!(oc) }
     oc.reload
@@ -132,16 +138,28 @@ class OrderCycle < ActiveRecord::Base
   end
 
   def variants
-    self.exchanges.map(&:variants).flatten.uniq.reject(&:deleted?)
+    Spree::Variant.
+      joins(:exchanges).
+      merge(Exchange.in_order_cycle(self)).
+      not_deleted.
+      select('DISTINCT spree_variants.*').
+      to_a # http://stackoverflow.com/q/15110166
+  end
+
+  def supplied_variants
+    self.exchanges.incoming.map(&:variants).flatten.uniq.reject(&:deleted?)
   end
 
   def distributed_variants
+    # TODO: only used in DistributionChangeValidator, can we remove?
     self.exchanges.outgoing.map(&:variants).flatten.uniq.reject(&:deleted?)
   end
 
   def variants_distributed_by(distributor)
+    return Spree::Variant.where("1=0") unless distributor.present?
     Spree::Variant.
       not_deleted.
+      merge(distributor.inventory_variants).
       joins(:exchanges).
       merge(Exchange.in_order_cycle(self)).
       merge(Exchange.outgoing).
@@ -175,25 +193,37 @@ class OrderCycle < ActiveRecord::Base
     self.variants.include? variant
   end
 
+  def dated?
+    !undated?
+  end
+
   def undated?
-    self.orders_open_at.nil? && self.orders_close_at.nil?
+    self.orders_open_at.nil? || self.orders_close_at.nil?
   end
 
   def upcoming?
-    self.orders_open_at && Time.now < self.orders_open_at
+    self.orders_open_at && Time.zone.now < self.orders_open_at
   end
 
   def open?
     self.orders_open_at && self.orders_close_at &&
-      Time.now > self.orders_open_at && Time.now < self.orders_close_at
+      Time.zone.now > self.orders_open_at && Time.zone.now < self.orders_close_at
   end
 
   def closed?
-    self.orders_close_at && Time.now > self.orders_close_at
+    self.orders_close_at && Time.zone.now > self.orders_close_at
   end
 
   def exchange_for_distributor(distributor)
     exchanges.outgoing.to_enterprises([distributor]).first
+  end
+
+  def exchange_for_supplier(supplier)
+    exchanges.incoming.from_enterprises([supplier]).first
+  end
+
+  def receival_instructions_for(supplier)
+    exchange_for_supplier(supplier).andand.receival_instructions
   end
 
   def pickup_time_for(distributor)
@@ -210,6 +240,14 @@ class OrderCycle < ActiveRecord::Base
 
   def exchanges_supplying(order)
     exchanges.supplying_to(order.distributor).with_any_variant(order.variants)
+  end
+
+  def coordinated_by?(user)
+    coordinator.users.include? user
+  end
+
+  def refresh_products_cache
+    OpenFoodNetwork::ProductsCache.order_cycle_changed self
   end
 
 

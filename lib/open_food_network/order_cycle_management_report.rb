@@ -16,24 +16,27 @@ module OpenFoodNetwork
       end
     end
 
-    def table
+    def search
+      Spree::Order.complete.where("spree_orders.state != ?", :canceled).distributed_by_user(@user).managed_by(@user).search(params[:q])
+    end
+
+    def orders
+      filter search.result
+    end
+
+    def table_items
       if is_payment_methods?
         orders.map { |o| payment_method_row o }
       else
         orders.map { |o| delivery_row o }
-      end     
+      end
     end
 
-    def orders
-      filter Spree::Order.managed_by(@user).distributed_by_user(@user).complete.where("spree_orders.state != ?", :canceled)
+    def filter(search_result)
+      filter_to_payment_method filter_to_shipping_method filter_to_order_cycle search_result
     end
 
-    def filter(orders)
-      filter_to_order_cycle filter_to_payment_method filter_to_shipping_method orders
-    end
-
-
-    private 
+    private
 
     def payment_method_row(order)
       ba = order.billing_address
@@ -47,40 +50,40 @@ module OpenFoodNetwork
        order.shipping_method.andand.name,
        order.payments.first.andand.payment_method.andand.name,
        order.payments.first.amount,
-       OpenFoodNetwork::UserBalanceCalculator.new(order.user, order.distributor).balance
+       OpenFoodNetwork::UserBalanceCalculator.new(order.email, order.distributor).balance
       ]
     end
 
     def delivery_row(order)
-      ba = order.billing_address
+      sa = order.shipping_address
       da = order.distributor.andand.address
-      [ba.firstname,
-       ba.lastname,
+      [sa.firstname,
+       sa.lastname,
        order.distributor.andand.name,
        customer_code(order.email),
-       "#{ba.address1} #{ba.address2} #{ba.city}",
-       ba.zipcode,
-       ba.phone,
+       "#{sa.address1} #{sa.address2} #{sa.city}",
+       sa.zipcode,
+       sa.phone,
        order.shipping_method.andand.name,
        order.payments.first.andand.payment_method.andand.name,
        order.payments.first.amount,
-       OpenFoodNetwork::UserBalanceCalculator.new(order.user, order.distributor).balance,
+       OpenFoodNetwork::UserBalanceCalculator.new(order.email, order.distributor).balance,
        has_temperature_controlled_items?(order),
        order.special_instructions
       ]
     end
 
     def filter_to_payment_method(orders)
-      if params[:payment_method_name].present?
-        orders.with_payment_method_name(params[:payment_method_name])
+      if params[:payment_method_in].present?
+        orders.joins(payments: :payment_method).where(spree_payments: { payment_method_id: params[:payment_method_in]})
       else
         orders
       end
     end
 
     def filter_to_shipping_method(orders)
-      if params[:shipping_method_name].present?
-        orders.joins(:shipping_method).where("spree_shipping_methods.name = ?", params[:shipping_method_name])
+      if params[:shipping_method_in].present?
+        orders.joins(:shipping_method).where(shipping_method_id: params[:shipping_method_in])
       else
         orders
       end

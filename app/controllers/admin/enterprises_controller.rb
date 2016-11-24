@@ -2,15 +2,17 @@ require 'open_food_network/referer_parser'
 
 module Admin
   class EnterprisesController < ResourceController
+    # These need to run before #load_resource so that @object is initialised with sanitised values
+    prepend_before_filter :override_owner, only: :create
+    prepend_before_filter :override_sells, only: :create
+
     before_filter :load_enterprise_set, :only => :index
     before_filter :load_countries, :except => [:index, :register, :check_permalink]
-    before_filter :load_methods_and_fees, :only => [:new, :edit, :update, :create]
+    before_filter :load_methods_and_fees, :only => [:edit, :update]
     before_filter :load_groups, :only => [:new, :edit, :update, :create]
     before_filter :load_taxons, :only => [:new, :edit, :update, :create]
     before_filter :check_can_change_sells, only: :update
     before_filter :check_can_change_bulk_sells, only: :bulk_update
-    before_filter :override_owner, only: :create
-    before_filter :override_sells, only: :create
     before_filter :check_can_change_owner, only: :update
     before_filter :check_can_change_bulk_owner, only: :bulk_update
     before_filter :check_can_change_managers, only: :update
@@ -25,9 +27,7 @@ module Admin
     def index
       respond_to do |format|
         format.html
-        format.json do
-          render json: @collection, each_serializer: Api::Admin::IndexEnterpriseSerializer, spree_current_user: spree_current_user
-        end
+        format.json { render_as_json @collection, ams_prefix: params[:ams_prefix], spree_current_user: spree_current_user }
       end
     end
 
@@ -35,16 +35,17 @@ module Admin
       render layout: "spree/layouts/bare_admin"
     end
 
-
     def update
       invoke_callbacks(:update, :before)
+      tag_rules_attributes = params[object_name].delete :tag_rules_attributes
+      update_tag_rules(tag_rules_attributes) if tag_rules_attributes.present?
       if @object.update_attributes(params[object_name])
         invoke_callbacks(:update, :after)
         flash[:success] = flash_message_for(@object, :successfully_updated)
         respond_with(@object) do |format|
           format.html { redirect_to location_after_save }
           format.js   { render :layout => false }
-          format.json { render json: @object, serializer: Api::Admin::IndexEnterpriseSerializer, spree_current_user: spree_current_user }
+          format.json { render_as_json @object, ams_prefix: 'index', spree_current_user: spree_current_user }
         end
       else
         invoke_callbacks(:update, :fails)
@@ -63,7 +64,7 @@ module Admin
       attributes = { sells: params[:sells], visible: true }
 
       if ['own', 'any'].include? params[:sells]
-        attributes[:shop_trial_start_date] = @enterprise.shop_trial_start_date || Time.now
+        attributes[:shop_trial_start_date] = @enterprise.shop_trial_start_date || Time.zone.now
       end
 
       if @enterprise.update_attributes(attributes)
@@ -99,9 +100,15 @@ module Admin
     def for_order_cycle
       respond_to do |format|
         format.json do
-          render json: ActiveModel::ArraySerializer.new( @collection,
-            each_serializer: Api::Admin::ForOrderCycle::EnterpriseSerializer, spree_current_user: spree_current_user
-          ).to_json
+          render json: @collection, each_serializer: Api::Admin::ForOrderCycle::EnterpriseSerializer, order_cycle: @order_cycle, spree_current_user: spree_current_user
+        end
+      end
+    end
+
+    def for_line_items
+      respond_to do |format|
+        format.json do
+          render_as_json @collection, ams_prefix: 'basic', spree_current_user: spree_current_user
         end
       end
     end
@@ -110,8 +117,8 @@ module Admin
 
     def build_resource_with_address
       enterprise = build_resource_without_address
-      enterprise.address = Spree::Address.new
-      enterprise.address.country = Spree::Country.find_by_id(Spree::Config[:default_country_id])
+      enterprise.address ||= Spree::Address.new
+      enterprise.address.country ||= Spree::Country.find_by_id(Spree::Config[:default_country_id])
       enterprise
     end
     alias_method_chain :build_resource, :address
@@ -135,20 +142,22 @@ module Admin
     def collection
       case action
       when :for_order_cycle
-        order_cycle = OrderCycle.find_by_id(params[:order_cycle_id]) if params[:order_cycle_id]
+        @order_cycle = OrderCycle.find_by_id(params[:order_cycle_id]) if params[:order_cycle_id]
         coordinator = Enterprise.find_by_id(params[:coordinator_id]) if params[:coordinator_id]
-        order_cycle = OrderCycle.new(coordinator: coordinator) if order_cycle.nil? && coordinator.present?
-        return OpenFoodNetwork::OrderCyclePermissions.new(spree_current_user, order_cycle).visible_enterprises
+        @order_cycle = OrderCycle.new(coordinator: coordinator) if @order_cycle.nil? && coordinator.present?
+        return OpenFoodNetwork::OrderCyclePermissions.new(spree_current_user, @order_cycle).visible_enterprises
       when :index
         if spree_current_user.admin?
           OpenFoodNetwork::Permissions.new(spree_current_user).
             editable_enterprises.
             order('is_primary_producer ASC, name')
         elsif json_request?
-          OpenFoodNetwork::Permissions.new(spree_current_user).editable_enterprises
+          OpenFoodNetwork::Permissions.new(spree_current_user).editable_enterprises.ransack(params[:q]).result
         else
-          Enterprise.where("1=0") unless json_request?
+          Enterprise.where("1=0")
         end
+      when :for_line_items
+        OpenFoodNetwork::Permissions.new(spree_current_user).visible_enterprises.ransack(params[:q]).result
       else
         # TODO was ordered with is_distributor DESC as well, not sure why or how we want to sort this now
         OpenFoodNetwork::Permissions.new(spree_current_user).
@@ -158,7 +167,7 @@ module Admin
     end
 
     def collection_actions
-      [:index, :for_order_cycle, :bulk_update]
+      [:index, :for_order_cycle, :for_line_items, :bulk_update]
     end
 
     def load_methods_and_fees
@@ -173,6 +182,27 @@ module Admin
 
     def load_taxons
       @taxons = Spree::Taxon.order(:name)
+    end
+
+    def update_tag_rules(tag_rules_attributes)
+      # Due to the combination of trying to use nested attributes and type inheritance
+      # we cannot apply all attributes to tag rules in one hit because mass assignment
+      # methods that are specific to each class do not become available until after the
+      # record is persisted. This problem is compounded by the use of calculators.
+      @object.transaction do
+        tag_rules_attributes.select{ |i, attrs| attrs[:type].present? }.each do |i, attrs|
+          rule = @object.tag_rules.find_by_id(attrs.delete :id) || attrs[:type].constantize.new(enterprise:  @object)
+          create_calculator_for(rule, attrs) if rule.type == "TagRule::DiscountOrder" && rule.calculator.nil?
+          rule.update_attributes(attrs)
+        end
+      end
+    end
+
+    def create_calculator_for(rule, attrs)
+      if attrs[:calculator_type].present? && attrs[:calculator_attributes].present?
+        rule.update_attributes(calculator_type: attrs[:calculator_type])
+        attrs[:calculator_attributes].merge!( { id: rule.calculator.id } )
+      end
     end
 
     def check_can_change_bulk_sells
@@ -241,12 +271,17 @@ module Admin
     # Overriding method on Spree's resource controller
     def location_after_save
       referer_path = OpenFoodNetwork::RefererParser::path(request.referer)
-      refered_from_edit = referer_path =~ /\/edit$/
-      if params[:enterprise].key?(:producer_properties_attributes) && !refered_from_edit
-        main_app.admin_enterprises_path
+      refered_from_producer_properties = referer_path =~ /\/producer_properties$/
+
+      if refered_from_producer_properties
+        main_app.admin_enterprise_producer_properties_path(@enterprise)
       else
         main_app.edit_admin_enterprise_path(@enterprise)
       end
+    end
+
+    def ams_prefix_whitelist
+      [:index, :basic]
     end
   end
 end

@@ -5,7 +5,7 @@ module OpenFoodNetwork
 
       AdjustmentMetadata.create! adjustment: a, enterprise: enterprise_fee.enterprise, fee_name: enterprise_fee.name, fee_type: enterprise_fee.fee_type, enterprise_role: role
 
-      a.set_absolute_included_tax! adjustment_tax(line_item.order, a)
+      a.set_absolute_included_tax! adjustment_tax(line_item, a)
     end
 
     def create_order_adjustment(order)
@@ -31,47 +31,22 @@ module OpenFoodNetwork
       "#{enterprise_fee.fee_type} fee by #{role} #{enterprise_fee.enterprise.name}"
     end
 
-    def adjustment_tax(order, adjustment)
-      tax_rates = enterprise_fee.tax_category ? enterprise_fee.tax_category.tax_rates.match(order) : []
+    def adjustment_tax(adjustable, adjustment)
+      tax_rates = rates_for(adjustable)
 
-      tax_rates.sum do |rate|
-        compute_tax rate, adjustment.amount
+      tax_rates.select(&:included_in_price).sum do |rate|
+        rate.compute_tax adjustment.amount
       end
     end
 
-    # Apply a TaxRate to a particular amount. TaxRates normally compute against
-    # LineItems or Orders, so we mock out a line item here to fit the interface
-    # that our calculator (usually DefaultTax) expects.
-    def compute_tax(tax_rate, amount)
-      product = OpenStruct.new tax_category: tax_rate.tax_category
-      line_item = Spree::LineItem.new quantity: 1
-      line_item.define_singleton_method(:product) { product }
-      line_item.define_singleton_method(:price) { amount }
-
-      # The enterprise fee adjustments for which we're calculating tax are always inclusive of
-      # tax. However, there's nothing to stop an admin from setting one up with a tax rate
-      # that's marked as not inclusive of tax, and that would result in the DefaultTax
-      # calculator generating a slightly incorrect value. Therefore, we treat the tax
-      # rate as inclusive of tax for the calculations below, regardless of its original
-      # setting.
-      with_tax_included_in_price(tax_rate) do
-        tax_rate.calculator.compute line_item
+    def rates_for(adjustable)
+      case adjustable
+      when Spree::LineItem
+        tax_category = enterprise_fee.inherits_tax_category? ? adjustable.product.tax_category : enterprise_fee.tax_category
+        return tax_category ? tax_category.tax_rates.match(adjustable.order) : []
+      when Spree::Order
+        return enterprise_fee.tax_category ? enterprise_fee.tax_category.tax_rates.match(adjustable) : []
       end
-    end
-
-    def with_tax_included_in_price(tax_rate)
-      old_included_in_price = tax_rate.included_in_price
-
-      tax_rate.included_in_price = true
-      tax_rate.calculator.calculable.included_in_price = true
-
-      result = yield
-
-      tax_rate.included_in_price = old_included_in_price
-      tax_rate.calculator.calculable.included_in_price = old_included_in_price
-
-      result
     end
   end
 end
-

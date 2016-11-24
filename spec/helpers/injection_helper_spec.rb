@@ -3,6 +3,13 @@ require 'spec_helper'
 describe InjectionHelper do
   let!(:enterprise) { create(:distributor_enterprise, facebook: "roger") }
 
+  let!(:distributor1) { create(:distributor_enterprise) }
+  let!(:distributor2) { create(:distributor_enterprise) }
+  let!(:user) { create(:user)}
+  let!(:d1o1) { create(:completed_order_with_totals, distributor: distributor1, user_id: user.id, total: 10000)}
+  let!(:d1o2) { create(:completed_order_with_totals, distributor: distributor1, user_id: user.id, total: 5000)}
+  let!(:d2o1) { create(:completed_order_with_totals, distributor: distributor2, user_id: user.id)}
+
   it "will inject via AMS" do
     helper.inject_json_ams("test", [enterprise], Api::IdSerializer).should match /#{enterprise.id}/
   end
@@ -19,15 +26,20 @@ describe InjectionHelper do
 
   it "injects shipping_methods" do
     sm = create(:shipping_method)
-    helper.stub(:current_order).and_return order = create(:order)
-    helper.stub_chain(:current_distributor, :shipping_methods, :uniq).and_return [sm]
+    current_distributor = create(:distributor_enterprise, shipping_methods: [sm])
+    order = create(:order, distributor: current_distributor)
+    allow(helper).to receive(:current_order) { order }
+    allow(helper).to receive(:spree_current_user) { nil }
     helper.inject_available_shipping_methods.should match sm.id.to_s
     helper.inject_available_shipping_methods.should match sm.compute_amount(order).to_s
   end
 
   it "injects payment methods" do
     pm = create(:payment_method)
-    helper.stub_chain(:current_order, :available_payment_methods).and_return [pm]
+    current_distributor = create(:distributor_enterprise, payment_methods: [pm])
+    order = create(:order, distributor: current_distributor)
+    allow(helper).to receive(:current_order) { order }
+    allow(helper).to receive(:spree_current_user) { nil }
     helper.inject_available_payment_methods.should match pm.id.to_s
     helper.inject_available_payment_methods.should match pm.name
   end
@@ -42,8 +54,4 @@ describe InjectionHelper do
     helper.inject_taxons.should match taxon.name
   end
 
-  it "injects taxons" do
-    taxon = create(:taxon)
-    helper.inject_taxons.should match taxon.name
-  end
 end

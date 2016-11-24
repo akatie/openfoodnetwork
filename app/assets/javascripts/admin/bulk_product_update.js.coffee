@@ -1,35 +1,24 @@
-angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout, $http, BulkProducts, DisplayProperties, dataFetcher, DirtyProducts, VariantUnitManager, StatusMessage, producers, Taxons, SpreeApiAuth, Columns, tax_categories) ->
+angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout, $http, $window, BulkProducts, DisplayProperties, dataFetcher, DirtyProducts, VariantUnitManager, StatusMessage, producers, Taxons, SpreeApiAuth, Columns, tax_categories) ->
     $scope.loading = true
 
     $scope.StatusMessage = StatusMessage
 
-    $scope.columns = Columns.setColumns
-      producer:             {name: "Producer",              visible: true}
-      sku:                  {name: "SKU",                   visible: false}
-      name:                 {name: "Name",                  visible: true}
-      unit:                 {name: "Unit",                  visible: true}
-      price:                {name: "Price",                 visible: true}
-      on_hand:              {name: "On Hand",               visible: true}
-      on_demand:            {name: "On Demand",             visible: false}
-      category:             {name: "Category",              visible: false}
-      tax_category:         {name: "Tax Category",          visible: false}
-      inherits_properties:  {name: "Inherits Properties?",  visible: false}
-      available_on:         {name: "Available On",          visible: false}
+    $scope.columns = Columns.columns
 
     $scope.variant_unit_options = VariantUnitManager.variantUnitOptions()
 
     $scope.filterableColumns = [
-      { name: "Producer",       db_column: "producer_name" },
-      { name: "Name",           db_column: "name" }
+      { name: t("label_producers"),       db_column: "producer_name" },
+      { name: t("name"),           db_column: "name" }
     ]
 
     $scope.filterTypes = [
-      { name: "Equals",         predicate: "eq" },
-      { name: "Contains",       predicate: "cont" }
+      { name: t("equals"),         predicate: "eq" },
+      { name: t("contains"),       predicate: "cont" }
     ]
 
     $scope.optionTabs =
-      filters:        { title: "Filter Products",   visible: false }
+      filters:        { title: t("filter_products"),   visible: false }
 
 
     $scope.producers = producers
@@ -105,7 +94,7 @@ angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout
       $scope.categoryFilter = "0"
 
     $scope.editWarn = (product, variant) ->
-      if (DirtyProducts.count() > 0 and confirm("Unsaved changes will be lost. Continue anyway?")) or (DirtyProducts.count() == 0)
+      if (DirtyProducts.count() > 0 and confirm(t("unsaved_changes_confirmation"))) or (DirtyProducts.count() == 0)
         window.location = "/admin/products/" + product.permalink_live + ((if variant then "/variants/" + variant.id else "")) + "/edit"
 
 
@@ -150,14 +139,14 @@ angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout
         if !$scope.variantSaved(variant)
           $scope.removeVariant(product, variant)
         else
-          if confirm("Are you sure?")
+          if confirm(t("are_you_sure"))
             $http(
               method: "DELETE"
               url: "/api/products/" + product.permalink_live + "/variants/" + variant.id + "/soft_delete"
             ).success (data) ->
               $scope.removeVariant(product, variant)
       else
-        alert("The last variant cannot be deleted!")
+        alert(t("delete_product_variant"))
 
     $scope.removeVariant = (product, variant) ->
       product.variants.splice product.variants.indexOf(variant), 1
@@ -194,7 +183,7 @@ angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout
       if productsToSubmit.length > 0
         $scope.updateProducts productsToSubmit # Don't submit an empty list
       else
-        StatusMessage.display 'alert', 'No changes to save.'
+        StatusMessage.display 'alert', t("products_change")
 
 
     $scope.updateProducts = (productsToSubmit) ->
@@ -212,11 +201,13 @@ angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout
       ).error (data, status) ->
         if status == 400 && data.errors? && data.errors.length > 0
           errors = error + "\n" for error in data.errors
-          alert "Saving failed with the following error(s):\n" + errors
-          $scope.displayFailure "Save failed due to invalid data"
+          alert t("products_update_error") + "\n" + errors
+          $scope.displayFailure t("products_update_error")
         else
-          $scope.displayFailure "Server returned with error status: " + status
+          $scope.displayFailure t("products_update_error_data") + status
 
+    $scope.cancel = (destination) ->
+      $window.location = destination
 
     $scope.packProduct = (product) ->
       if product.variant_unit_with_scale
@@ -253,23 +244,24 @@ angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout
 
 
     $scope.displayUpdating = ->
-      StatusMessage.display 'progress', 'Saving...'
+      StatusMessage.display 'progress', t("saving")
 
 
     $scope.displaySuccess = ->
-      StatusMessage.display 'success', 'Changes saved.'
+      StatusMessage.display 'success',t("products_changes_saved")
+      $scope.bulk_product_form.$setPristine()
 
 
     $scope.displayFailure = (failMessage) ->
-      StatusMessage.display 'failure', "Saving failed. #{failMessage}"
+      StatusMessage.display  'failure', t("products_update_error_msg") + "#{failMessage}"
 
 
     $scope.displayDirtyProducts = ->
-      if DirtyProducts.count() > 0
-        message = if DirtyProducts.count() == 1 then "one product" else DirtyProducts.count() + " products"
-        StatusMessage.display 'notice', "Changes to #{message} remain unsaved."
-      else
-        StatusMessage.clear()
+      count = DirtyProducts.count()
+      switch count
+        when 0 then StatusMessage.clear()
+        when 1 then StatusMessage.display 'notice', t("one_product_unsaved")
+        else StatusMessage.display 'notice', t("products_unsaved", n: count)
 
 
 filterSubmitProducts = (productsToFilter) ->
@@ -352,6 +344,9 @@ filterSubmitVariant = (variant) ->
   filteredVariant = {}
   if not variant.deleted_at? and variant.hasOwnProperty("id")
     filteredVariant.id = variant.id unless variant.id <= 0
+    if variant.hasOwnProperty("sku")
+      filteredVariant.sku = variant.sku
+      hasUpdatableProperty = true
     if variant.hasOwnProperty("on_hand")
       filteredVariant.on_hand = variant.on_hand
       hasUpdatableProperty = true

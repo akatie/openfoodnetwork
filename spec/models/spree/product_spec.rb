@@ -35,7 +35,7 @@ module Spree
       it "defaults available_on to now" do
         Timecop.freeze
         product = Product.new
-        product.available_on.should == Time.now
+        product.available_on.should == Time.zone.now
       end
 
       describe "tax category" do
@@ -159,6 +159,19 @@ module Spree
           product.should_not be_valid
         end
       end
+    end
+
+    describe "callbacks" do
+      let(:product) { create(:simple_product) }
+
+      it "refreshes the products cache on save" do
+        expect(OpenFoodNetwork::ProductsCache).to receive(:product_changed).with(product)
+        product.name = 'asdf'
+        product.save
+      end
+
+      # On destroy, all distributed variants are refreshed by a Variant around_destroy
+      # callback, so we don't need to do anything on the product model.
     end
 
     describe "scopes" do
@@ -338,6 +351,22 @@ module Spree
           product.should include @p2
         end
       end
+
+      describe "visible_for" do
+        let(:enterprise) { create(:distributor_enterprise) }
+        let!(:new_variant) { create(:variant) }
+        let!(:hidden_variant) { create(:variant) }
+        let!(:visible_variant) { create(:variant) }
+        let!(:hidden_inventory_item) { create(:inventory_item, enterprise: enterprise, variant: hidden_variant, visible: false ) }
+        let!(:visible_inventory_item) { create(:inventory_item, enterprise: enterprise, variant: visible_variant, visible: true ) }
+
+        let!(:products) { Spree::Product.visible_for(enterprise) }
+
+        it "lists any products with variants that are listed as visible=true" do
+          expect(products).to include visible_variant.product
+          expect(products).to_not include new_variant.product, hidden_variant.product
+        end
+      end
     end
 
     describe "finders" do
@@ -391,7 +420,7 @@ module Spree
         end
       end
 
-      context "when product has an inherit_properties value set to true" do
+      context "when product has an inherit_properties value set to false" do
         let(:supplier) { create(:supplier_enterprise) }
         let(:product) { create(:simple_product, supplier: supplier, inherits_properties: false) }
 
@@ -556,10 +585,10 @@ module Spree
       describe "finding products in stock for a particular distribution" do
         it "returns on-demand products" do
           p = create(:simple_product, on_demand: true)
-          p.master.update_attribute(:count_on_hand, 0)
+          p.variants.first.update_attributes!(count_on_hand: 0, on_demand: true)
           d = create(:distributor_enterprise)
           oc = create(:simple_order_cycle, distributors: [d])
-          oc.exchanges.outgoing.first.variants << p.master
+          oc.exchanges.outgoing.first.variants << p.variants.first
 
           p.should have_stock_for_distribution(oc, d)
         end

@@ -1,22 +1,21 @@
-.filter_select, .date_filter {
-	margin-bottom: 10px;
-}
-
-.filter_clear {
-	input {
-		background-color: #DA5354;
-	}
-}
-
 input, div {
 	&.update-pending {
 	  border: solid 1px orange;
   }
 }
 
+input.show-dirty {
+	&.ng-dirty {
+	  border: solid 1px orange;
+		&.update-error {
+			border: solid 1px #DA5354;
+		}
+  }
+}
+
 input, div {
 	&.update-error {
-		border: solid 1px red;
+		border: solid 1px #DA5354;
 	}
 }
 
@@ -48,4 +47,41 @@ div#group_buy_calculation {
 	.row span {
 		text-align: center;
 	}
+}
+
+.input-symbol {
+  position: relative;
+  &.before {
+
+	  span {
+			position: absolute;
+		  transform: translate(0,-50%);
+		  top:50%;
+		  pointer-events:none;
+		  margin-left: 1em;
+		}
+
+		input {
+			text-indent:1em;
+		}
+	}
+
+	&.after {
+
+		span {
+			position: absolute;
+			transform: translate(0,-55%);
+			top:50%;
+			right: 0.5em;
+			pointer-events:none;
+		}
+
+		input {
+			padding-right: 1.2em;
+		}
+	}
+}
+
+th.actions {
+  white-space: nowrap;
 }

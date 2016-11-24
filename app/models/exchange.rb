@@ -1,4 +1,6 @@
 class Exchange < ActiveRecord::Base
+  acts_as_taggable
+
   belongs_to :order_cycle
   belongs_to :sender, :class_name => 'Enterprise'
   belongs_to :receiver, :class_name => 'Enterprise'
@@ -12,6 +14,9 @@ class Exchange < ActiveRecord::Base
 
   validates_presence_of :order_cycle, :sender, :receiver
   validates_uniqueness_of :sender_id, :scope => [:order_cycle_id, :receiver_id, :incoming]
+
+  after_save :refresh_products_cache
+  after_destroy :refresh_products_cache_from_destroy
 
   accepts_nested_attributes_for :variants
 
@@ -27,7 +32,15 @@ class Exchange < ActiveRecord::Base
   scope :with_variant, lambda { |variant| joins(:exchange_variants).where('exchange_variants.variant_id = ?', variant) }
   scope :with_any_variant, lambda { |variants| joins(:exchange_variants).where('exchange_variants.variant_id IN (?)', variants).select('DISTINCT exchanges.*') }
   scope :with_product, lambda { |product| joins(:exchange_variants).where('exchange_variants.variant_id IN (?)', product.variants_including_master) }
+  scope :by_enterprise_name, joins('INNER JOIN enterprises AS sender   ON (sender.id   = exchanges.sender_id)').
+                             joins('INNER JOIN enterprises AS receiver ON (receiver.id = exchanges.receiver_id)').
+                             order("CASE WHEN exchanges.incoming='t' THEN sender.name ELSE receiver.name END")
 
+  # Exchanges on order cycles that are dated and are upcoming or open are cached
+  scope :cachable, outgoing.
+                   joins(:order_cycle).
+                   merge(OrderCycle.dated).
+                   merge(OrderCycle.not_closed)
 
   scope :managed_by, lambda { |user|
     if user.has_spree_role?('admin')
@@ -47,6 +60,7 @@ class Exchange < ActiveRecord::Base
     exchange.order_cycle = new_order_cycle
     exchange.enterprise_fee_ids = self.enterprise_fee_ids
     exchange.variant_ids = self.variant_ids
+    exchange.tag_ids = self.tag_ids
     exchange.save!
     exchange
   end
@@ -73,4 +87,11 @@ class Exchange < ActiveRecord::Base
     end
   end
 
+  def refresh_products_cache
+    OpenFoodNetwork::ProductsCache.exchange_changed self
+  end
+
+  def refresh_products_cache_from_destroy
+    OpenFoodNetwork::ProductsCache.exchange_destroyed self
+  end
 end

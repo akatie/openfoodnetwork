@@ -1,30 +1,33 @@
 source 'https://rubygems.org'
-ruby "1.9.3"
+ruby "2.1.5"
 
 gem 'rails', '3.2.21'
 gem 'rails-i18n', '~> 3.0.0'
 gem 'i18n', '~> 0.6.11'
 
-gem 'pg'
-gem 'spree', :github => 'openfoodfoundation/spree', :branch => '1-3-stable'
-gem 'spree_i18n', :github => 'spree/spree_i18n', :branch => '1-3-stable'
-gem 'spree_auth_devise', :github => 'spree/spree_auth_devise', :branch => '1-3-stable'
+# Patched version. See http://rubysec.com/advisories/CVE-2015-5312/.
+gem 'nokogiri', '>= 1.6.7.1'
 
-# Waiting on merge of PR #117
-# https://github.com/spree-contrib/better_spree_paypal_express/pull/117
-gem 'spree_paypal_express', :github => "openfoodfoundation/better_spree_paypal_express", :branch => "1-3-stable"
+gem 'pg'
+gem 'spree', github: 'openfoodfoundation/spree', branch: 'spree-upgrade-step1c'
+gem 'spree_i18n', github: 'spree/spree_i18n', branch: '1-3-stable'
+gem 'spree_auth_devise', github: 'spree/spree_auth_devise', branch: '1-3-stable'
+
+# Our branch contains two changes
+# - Pass customer email and phone number to PayPal (merged to upstream master)
+# - Change type of password from string to password to hide it in the form
+gem 'spree_paypal_express', :github => "openfoodfoundation/better_spree_paypal_express", :branch => "hide-password"
 #gem 'spree_paypal_express', :github => "spree-contrib/better_spree_paypal_express", :branch => "1-3-stable"
 
 gem 'delayed_job_active_record'
 gem 'daemons'
-gem 'comfortable_mexican_sofa'
 
 # Fix bug in simple_form preventing collection_check_boxes usage within form_for block
 # When merged, revert to upstream gem
 gem 'simple_form', :github => 'RohanM/simple_form'
 
 gem 'unicorn'
-gem 'angularjs-rails', '1.2.13'
+gem 'angularjs-rails', '1.5.5'
 gem 'bugsnag'
 gem 'newrelic_rpm'
 gem 'haml'
@@ -50,7 +53,13 @@ gem 'custom_error_message', :github => 'jeremydurham/custom-err-msg'
 gem 'angularjs-file-upload-rails', '~> 1.1.0'
 gem 'roadie-rails', '~> 1.0.3'
 gem 'figaro'
+gem 'blockenspiel'
 gem 'acts-as-taggable-on', '~> 3.4'
+gem 'paper_trail', '~> 3.0.8'
+gem 'diffy'
+
+gem 'wicked_pdf'
+gem 'wkhtmltopdf-binary'
 
 gem 'foreigner'
 gem 'immigrant'
@@ -78,6 +87,7 @@ gem "foundation-rails"
 gem 'foundation_rails_helper', github: 'willrjmarshall/foundation_rails_helper', branch: "rails3"
 
 gem 'jquery-rails'
+gem 'jquery-migrate-rails'
 gem 'css_splitter'
 
 
@@ -90,13 +100,15 @@ group :test, :development do
   gem 'factory_girl_rails', :require => false
   gem 'capybara'
   gem 'database_cleaner', '0.7.1', :require => false
-  gem 'simplecov', :require => false
   gem 'awesome_print'
   gem 'letter_opener'
   gem 'timecop'
   gem 'poltergeist'
+  gem 'rspec-retry'
   gem 'json_spec'
   gem 'unicorn-rails'
+  gem 'atomic'
+  gem 'knapsack'
 end
 
 group :test do
@@ -107,7 +119,7 @@ group :test do
 end
 
 group :development do
-  gem 'pry-debugger'
+  gem 'pry-byebug'
   gem 'debugger-linecache'
   gem 'guard'
   gem 'guard-livereload'

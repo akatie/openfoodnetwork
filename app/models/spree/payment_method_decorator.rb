@@ -1,8 +1,15 @@
 Spree::PaymentMethod.class_eval do
-  # See gateway_decorator.rb when modifying this association
+  Spree::PaymentMethod::DISPLAY = [:both, :front_end, :back_end]
+
+  acts_as_taggable
+
   has_and_belongs_to_many :distributors, join_table: 'distributors_payment_methods', :class_name => 'Enterprise', association_foreign_key: 'distributor_id'
 
-  attr_accessible :distributor_ids
+  attr_accessible :distributor_ids, :tag_list
+
+  calculated_adjustments
+
+  after_initialize :init
 
   validates :distributors, presence: { message: "^At least one hub must be selected" }
 
@@ -31,29 +38,28 @@ Spree::PaymentMethod.class_eval do
     where('spree_payment_methods.environment=? OR spree_payment_methods.environment=? OR spree_payment_methods.environment IS NULL', Rails.env, '')
   }
 
+  def init
+    self.class.calculated_adjustments unless reflections.keys.include? :calculator
+    self.calculator ||= Spree::Calculator::FlatRate.new(preferred_amount: 0)
+  end
+
   def has_distributor?(distributor)
     self.distributors.include?(distributor)
   end
-end
 
-# Ensure that all derived classes also allow distributor_ids
-Spree::Gateway.providers.each do |p|
-  p.attr_accessible :distributor_ids
-  p.instance_eval do
-    def clean_name
-      case name
-      when "Spree::PaymentMethod::Check"
-        "Cash/EFT/etc. (payments for which automatic validation is not required)"
-      when "Spree::Gateway::Migs"
-        "MasterCard Internet Gateway Service (MIGS)"
-      when "Spree::Gateway::Pin"
-        "Pin Payments"
-      when "Spree::Gateway::PayPalExpress"
-        "PayPal Express"
-      else
-        i = name.rindex('::') + 2
-        name[i..-1]
-      end
+  def self.clean_name
+    case name
+    when "Spree::PaymentMethod::Check"
+      "Cash/EFT/etc. (payments for which automatic validation is not required)"
+    when "Spree::Gateway::Migs"
+      "MasterCard Internet Gateway Service (MIGS)"
+    when "Spree::Gateway::Pin"
+      "Pin Payments"
+    when "Spree::Gateway::PayPalExpress"
+      "PayPal Express"
+    else
+      i = name.rindex('::') + 2
+      name[i..-1]
     end
   end
 end

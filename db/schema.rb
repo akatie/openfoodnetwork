@@ -11,7 +11,20 @@
 #
 # It's strongly recommended to check this file into your version control system.
 
-ActiveRecord::Schema.define(:version => 20150612045544) do
+ActiveRecord::Schema.define(:version => 20160921060442) do
+
+  create_table "account_invoices", :force => true do |t|
+    t.integer  "user_id",    :null => false
+    t.integer  "order_id"
+    t.integer  "year",       :null => false
+    t.integer  "month",      :null => false
+    t.datetime "issued_at"
+    t.datetime "created_at", :null => false
+    t.datetime "updated_at", :null => false
+  end
+
+  add_index "account_invoices", ["order_id"], :name => "index_account_invoices_on_order_id"
+  add_index "account_invoices", ["user_id"], :name => "index_account_invoices_on_user_id"
 
   create_table "adjustment_metadata", :force => true do |t|
     t.integer "adjustment_id"
@@ -24,130 +37,40 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
   add_index "adjustment_metadata", ["adjustment_id"], :name => "index_adjustment_metadata_on_adjustment_id"
   add_index "adjustment_metadata", ["enterprise_id"], :name => "index_adjustment_metadata_on_enterprise_id"
 
+  create_table "billable_periods", :force => true do |t|
+    t.integer  "enterprise_id"
+    t.integer  "owner_id"
+    t.datetime "begins_at"
+    t.datetime "ends_at"
+    t.string   "sells"
+    t.boolean  "trial",              :default => false
+    t.decimal  "turnover",           :default => 0.0
+    t.datetime "deleted_at"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.integer  "account_invoice_id",                    :null => false
+  end
+
+  add_index "billable_periods", ["account_invoice_id"], :name => "index_billable_periods_on_account_invoice_id"
+
   create_table "carts", :force => true do |t|
     t.integer "user_id"
   end
 
   add_index "carts", ["user_id"], :name => "index_carts_on_user_id"
 
-  create_table "cms_blocks", :force => true do |t|
-    t.integer  "page_id",    :null => false
-    t.string   "identifier", :null => false
-    t.text     "content"
-    t.datetime "created_at", :null => false
-    t.datetime "updated_at", :null => false
+  create_table "column_preferences", :force => true do |t|
+    t.integer  "user_id",     :null => false
+    t.string   "action_name", :null => false
+    t.string   "column_name", :null => false
+    t.boolean  "visible",     :null => false
+    t.datetime "created_at",  :null => false
+    t.datetime "updated_at",  :null => false
   end
 
-  add_index "cms_blocks", ["page_id", "identifier"], :name => "index_cms_blocks_on_page_id_and_identifier"
+  add_index "column_preferences", ["user_id", "action_name", "column_name"], :name => "index_column_prefs_on_user_id_and_action_name_and_column_name", :unique => true
 
-  create_table "cms_categories", :force => true do |t|
-    t.integer "site_id",          :null => false
-    t.string  "label",            :null => false
-    t.string  "categorized_type", :null => false
-  end
-
-  add_index "cms_categories", ["site_id", "categorized_type", "label"], :name => "index_cms_categories_on_site_id_and_categorized_type_and_label", :unique => true
-
-  create_table "cms_categorizations", :force => true do |t|
-    t.integer "category_id",      :null => false
-    t.string  "categorized_type", :null => false
-    t.integer "categorized_id",   :null => false
-  end
-
-  add_index "cms_categorizations", ["category_id", "categorized_type", "categorized_id"], :name => "index_cms_categorizations_on_cat_id_and_catd_type_and_catd_id", :unique => true
-
-  create_table "cms_files", :force => true do |t|
-    t.integer  "site_id",                                          :null => false
-    t.integer  "block_id"
-    t.string   "label",                                            :null => false
-    t.string   "file_file_name",                                   :null => false
-    t.string   "file_content_type",                                :null => false
-    t.integer  "file_file_size",                                   :null => false
-    t.string   "description",       :limit => 2048
-    t.integer  "position",                          :default => 0, :null => false
-    t.datetime "created_at",                                       :null => false
-    t.datetime "updated_at",                                       :null => false
-  end
-
-  add_index "cms_files", ["site_id", "block_id"], :name => "index_cms_files_on_site_id_and_block_id"
-  add_index "cms_files", ["site_id", "file_file_name"], :name => "index_cms_files_on_site_id_and_file_file_name"
-  add_index "cms_files", ["site_id", "label"], :name => "index_cms_files_on_site_id_and_label"
-  add_index "cms_files", ["site_id", "position"], :name => "index_cms_files_on_site_id_and_position"
-
-  create_table "cms_layouts", :force => true do |t|
-    t.integer  "site_id",                       :null => false
-    t.integer  "parent_id"
-    t.string   "app_layout"
-    t.string   "label",                         :null => false
-    t.string   "identifier",                    :null => false
-    t.text     "content"
-    t.text     "css"
-    t.text     "js"
-    t.integer  "position",   :default => 0,     :null => false
-    t.boolean  "is_shared",  :default => false, :null => false
-    t.datetime "created_at",                    :null => false
-    t.datetime "updated_at",                    :null => false
-  end
-
-  add_index "cms_layouts", ["parent_id", "position"], :name => "index_cms_layouts_on_parent_id_and_position"
-  add_index "cms_layouts", ["site_id", "identifier"], :name => "index_cms_layouts_on_site_id_and_identifier", :unique => true
-
-  create_table "cms_pages", :force => true do |t|
-    t.integer  "site_id",                           :null => false
-    t.integer  "layout_id"
-    t.integer  "parent_id"
-    t.integer  "target_page_id"
-    t.string   "label",                             :null => false
-    t.string   "slug"
-    t.string   "full_path",                         :null => false
-    t.text     "content"
-    t.integer  "position",       :default => 0,     :null => false
-    t.integer  "children_count", :default => 0,     :null => false
-    t.boolean  "is_published",   :default => true,  :null => false
-    t.boolean  "is_shared",      :default => false, :null => false
-    t.datetime "created_at",                        :null => false
-    t.datetime "updated_at",                        :null => false
-  end
-
-  add_index "cms_pages", ["parent_id", "position"], :name => "index_cms_pages_on_parent_id_and_position"
-  add_index "cms_pages", ["site_id", "full_path"], :name => "index_cms_pages_on_site_id_and_full_path"
-
-  create_table "cms_revisions", :force => true do |t|
-    t.string   "record_type", :null => false
-    t.integer  "record_id",   :null => false
-    t.text     "data"
-    t.datetime "created_at"
-  end
-
-  add_index "cms_revisions", ["record_type", "record_id", "created_at"], :name => "index_cms_revisions_on_record_type_and_record_id_and_created_at"
-
-  create_table "cms_sites", :force => true do |t|
-    t.string  "label",                          :null => false
-    t.string  "identifier",                     :null => false
-    t.string  "hostname",                       :null => false
-    t.string  "path"
-    t.string  "locale",      :default => "en",  :null => false
-    t.boolean "is_mirrored", :default => false, :null => false
-  end
-
-  add_index "cms_sites", ["hostname"], :name => "index_cms_sites_on_hostname"
-  add_index "cms_sites", ["is_mirrored"], :name => "index_cms_sites_on_is_mirrored"
-
-  create_table "cms_snippets", :force => true do |t|
-    t.integer  "site_id",                       :null => false
-    t.string   "label",                         :null => false
-    t.string   "identifier",                    :null => false
-    t.text     "content"
-    t.integer  "position",   :default => 0,     :null => false
-    t.boolean  "is_shared",  :default => false, :null => false
-    t.datetime "created_at",                    :null => false
-    t.datetime "updated_at",                    :null => false
-  end
-
-  add_index "cms_snippets", ["site_id", "identifier"], :name => "index_cms_snippets_on_site_id_and_identifier", :unique => true
-  add_index "cms_snippets", ["site_id", "position"], :name => "index_cms_snippets_on_site_id_and_position"
-
-  create_table "coordinator_fees", :id => false, :force => true do |t|
+  create_table "coordinator_fees", :force => true do |t|
     t.integer "order_cycle_id"
     t.integer "enterprise_fee_id"
   end
@@ -156,16 +79,21 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
   add_index "coordinator_fees", ["order_cycle_id"], :name => "index_coordinator_fees_on_order_cycle_id"
 
   create_table "customers", :force => true do |t|
-    t.string   "email",         :null => false
-    t.integer  "enterprise_id", :null => false
+    t.string   "email",           :null => false
+    t.integer  "enterprise_id",   :null => false
     t.string   "code"
     t.integer  "user_id"
-    t.datetime "created_at",    :null => false
-    t.datetime "updated_at",    :null => false
+    t.datetime "created_at",      :null => false
+    t.datetime "updated_at",      :null => false
+    t.integer  "bill_address_id"
+    t.integer  "ship_address_id"
+    t.string   "name"
   end
 
+  add_index "customers", ["bill_address_id"], :name => "index_customers_on_bill_address_id"
   add_index "customers", ["email"], :name => "index_customers_on_email"
   add_index "customers", ["enterprise_id", "code"], :name => "index_customers_on_enterprise_id_and_code", :unique => true
+  add_index "customers", ["ship_address_id"], :name => "index_customers_on_ship_address_id"
   add_index "customers", ["user_id"], :name => "index_customers_on_user_id"
 
   create_table "delayed_jobs", :force => true do |t|
@@ -206,9 +134,10 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
     t.integer  "enterprise_id"
     t.string   "fee_type"
     t.string   "name"
-    t.datetime "created_at",      :null => false
-    t.datetime "updated_at",      :null => false
+    t.datetime "created_at",                               :null => false
+    t.datetime "updated_at",                               :null => false
     t.integer  "tax_category_id"
+    t.boolean  "inherits_tax_category", :default => false, :null => false
   end
 
   add_index "enterprise_fees", ["enterprise_id"], :name => "index_enterprise_fees_on_enterprise_id"
@@ -317,6 +246,9 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
     t.boolean  "producer_profile_only",    :default => false
     t.string   "permalink",                                    :null => false
     t.boolean  "charges_sales_tax",        :default => false,  :null => false
+    t.string   "email_address"
+    t.boolean  "require_login",            :default => false,  :null => false
+    t.boolean  "allow_guest_orders",       :default => true,   :null => false
   end
 
   add_index "enterprises", ["address_id"], :name => "index_enterprises_on_address_id"
@@ -357,12 +289,23 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
     t.datetime "created_at",                               :null => false
     t.datetime "updated_at",                               :null => false
     t.boolean  "incoming",              :default => false, :null => false
+    t.string   "receival_instructions"
   end
 
   add_index "exchanges", ["order_cycle_id"], :name => "index_exchanges_on_order_cycle_id"
   add_index "exchanges", ["payment_enterprise_id"], :name => "index_exchanges_on_payment_enterprise_id"
   add_index "exchanges", ["receiver_id"], :name => "index_exchanges_on_receiver_id"
   add_index "exchanges", ["sender_id"], :name => "index_exchanges_on_sender_id"
+
+  create_table "inventory_items", :force => true do |t|
+    t.integer  "enterprise_id",                   :null => false
+    t.integer  "variant_id",                      :null => false
+    t.boolean  "visible",       :default => true, :null => false
+    t.datetime "created_at",                      :null => false
+    t.datetime "updated_at",                      :null => false
+  end
+
+  add_index "inventory_items", ["enterprise_id", "variant_id"], :name => "index_inventory_items_on_enterprise_id_and_variant_id", :unique => true
 
   create_table "order_cycles", :force => true do |t|
     t.string   "name"
@@ -563,7 +506,7 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
     t.string   "currency"
     t.decimal  "distribution_fee",     :precision => 10, :scale => 2
     t.string   "shipping_method_name"
-    t.decimal  "unit_value",           :precision => 8,  :scale => 2
+    t.decimal  "final_weight_volume",  :precision => 10, :scale => 2
   end
 
   add_index "spree_line_items", ["order_id"], :name => "index_line_items_on_order_id"
@@ -605,6 +548,13 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
     t.datetime "created_at",     :null => false
     t.datetime "updated_at",     :null => false
   end
+
+  create_table "spree_option_values_line_items", :id => false, :force => true do |t|
+    t.integer "line_item_id"
+    t.integer "option_value_id"
+  end
+
+  add_index "spree_option_values_line_items", ["line_item_id"], :name => "index_option_values_line_items_on_line_item_id"
 
   create_table "spree_option_values_variants", :id => false, :force => true do |t|
     t.integer "variant_id"
@@ -1097,6 +1047,15 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
     t.integer "state_id"
   end
 
+  create_table "tag_rules", :force => true do |t|
+    t.integer  "enterprise_id",                    :null => false
+    t.string   "type",                             :null => false
+    t.datetime "created_at",                       :null => false
+    t.datetime "updated_at",                       :null => false
+    t.boolean  "is_default",    :default => false, :null => false
+    t.integer  "priority",      :default => 99,    :null => false
+  end
+
   create_table "taggings", :force => true do |t|
     t.integer  "tag_id"
     t.integer  "taggable_id"
@@ -1118,42 +1077,48 @@ ActiveRecord::Schema.define(:version => 20150612045544) do
   add_index "tags", ["name"], :name => "index_tags_on_name", :unique => true
 
   create_table "variant_overrides", :force => true do |t|
-    t.integer "variant_id",                                  :null => false
-    t.integer "hub_id",                                      :null => false
-    t.decimal "price",         :precision => 8, :scale => 2
-    t.integer "count_on_hand"
+    t.integer  "variant_id",                                          :null => false
+    t.integer  "hub_id",                                              :null => false
+    t.decimal  "price",                 :precision => 8, :scale => 2
+    t.integer  "count_on_hand"
+    t.integer  "default_stock"
+    t.boolean  "resettable"
+    t.string   "sku"
+    t.boolean  "on_demand"
+    t.datetime "permission_revoked_at"
   end
 
   add_index "variant_overrides", ["variant_id", "hub_id"], :name => "index_variant_overrides_on_variant_id_and_hub_id"
 
+  create_table "versions", :force => true do |t|
+    t.string   "item_type",  :null => false
+    t.integer  "item_id",    :null => false
+    t.string   "event",      :null => false
+    t.string   "whodunnit"
+    t.text     "object"
+    t.datetime "created_at"
+  end
+
+  add_index "versions", ["item_type", "item_id"], :name => "index_versions_on_item_type_and_item_id"
+
+  add_foreign_key "account_invoices", "spree_orders", name: "account_invoices_order_id_fk", column: "order_id"
+  add_foreign_key "account_invoices", "spree_users", name: "account_invoices_user_id_fk", column: "user_id"
+
   add_foreign_key "adjustment_metadata", "enterprises", name: "adjustment_metadata_enterprise_id_fk"
   add_foreign_key "adjustment_metadata", "spree_adjustments", name: "adjustment_metadata_adjustment_id_fk", column: "adjustment_id", dependent: :delete
 
+  add_foreign_key "billable_periods", "account_invoices", name: "billable_periods_account_invoice_id_fk"
+  add_foreign_key "billable_periods", "enterprises", name: "bill_items_enterprise_id_fk"
+  add_foreign_key "billable_periods", "spree_users", name: "bill_items_owner_id_fk", column: "owner_id"
+
   add_foreign_key "carts", "spree_users", name: "carts_user_id_fk", column: "user_id"
-
-  add_foreign_key "cms_blocks", "cms_pages", name: "cms_blocks_page_id_fk", column: "page_id"
-
-  add_foreign_key "cms_categories", "cms_sites", name: "cms_categories_site_id_fk", column: "site_id", dependent: :delete
-
-  add_foreign_key "cms_categorizations", "cms_categories", name: "cms_categorizations_category_id_fk", column: "category_id"
-
-  add_foreign_key "cms_files", "cms_blocks", name: "cms_files_block_id_fk", column: "block_id"
-  add_foreign_key "cms_files", "cms_sites", name: "cms_files_site_id_fk", column: "site_id"
-
-  add_foreign_key "cms_layouts", "cms_layouts", name: "cms_layouts_parent_id_fk", column: "parent_id"
-  add_foreign_key "cms_layouts", "cms_sites", name: "cms_layouts_site_id_fk", column: "site_id", dependent: :delete
-
-  add_foreign_key "cms_pages", "cms_layouts", name: "cms_pages_layout_id_fk", column: "layout_id"
-  add_foreign_key "cms_pages", "cms_pages", name: "cms_pages_parent_id_fk", column: "parent_id"
-  add_foreign_key "cms_pages", "cms_pages", name: "cms_pages_target_page_id_fk", column: "target_page_id"
-  add_foreign_key "cms_pages", "cms_sites", name: "cms_pages_site_id_fk", column: "site_id", dependent: :delete
-
-  add_foreign_key "cms_snippets", "cms_sites", name: "cms_snippets_site_id_fk", column: "site_id", dependent: :delete
 
   add_foreign_key "coordinator_fees", "enterprise_fees", name: "coordinator_fees_enterprise_fee_id_fk"
   add_foreign_key "coordinator_fees", "order_cycles", name: "coordinator_fees_order_cycle_id_fk"
 
   add_foreign_key "customers", "enterprises", name: "customers_enterprise_id_fk"
+  add_foreign_key "customers", "spree_addresses", name: "customers_bill_address_id_fk", column: "bill_address_id"
+  add_foreign_key "customers", "spree_addresses", name: "customers_ship_address_id_fk", column: "ship_address_id"
   add_foreign_key "customers", "spree_users", name: "customers_user_id_fk", column: "user_id"
 
   add_foreign_key "distributors_payment_methods", "enterprises", name: "distributors_payment_methods_distributor_id_fk", column: "distributor_id"

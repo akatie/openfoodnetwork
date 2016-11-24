@@ -1,8 +1,5 @@
 Darkswarm.controller "GroupEnterprisesCtrl", ($scope, Search, FilterSelectorsService, EnterpriseModal) ->
-  $scope.totalActive =  FilterSelectorsService.totalActive
-  $scope.clearAll =  FilterSelectorsService.clearAll
-  $scope.filterText =  FilterSelectorsService.filterText
-  $scope.FilterSelectorsService =  FilterSelectorsService
+  $scope.filterSelectors = FilterSelectorsService.createSelectors()
   $scope.query = Search.search()
   $scope.openModal = EnterpriseModal.open
   $scope.activeTaxons = []
@@ -11,3 +8,6 @@ Darkswarm.controller "GroupEnterprisesCtrl", ($scope, Search, FilterSelectorsSer
 
   $scope.$watch "query", (query)->
     Search.search query
+
+  $scope.$watch "filtersActive", (value) ->
+    $scope.$broadcast 'filtersToggled'
