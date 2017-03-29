@@ -57,6 +57,7 @@ class AbilityDecorator
 
   def add_group_management_abilities(user)
     can [:admin, :index], :overview
+    can [:admin, :sync], :analytic
     can [:admin, :index], EnterpriseGroup
     can [:read, :edit, :update], EnterpriseGroup do |group|
       user.owned_groups.include? group
@@ -69,6 +70,7 @@ class AbilityDecorator
     can [:create, :search], nil
 
     can [:admin, :index], :overview
+    can [:admin, :sync], :analytic
 
     can [:admin, :index, :read, :create, :edit, :update_positions, :destroy], ProducerProperty
 
@@ -152,6 +154,8 @@ class AbilityDecorator
 
     can [:admin, :index, :read, :search], Spree::Taxon
     can [:admin, :index, :read, :create, :edit], Spree::Classification
+
+    can [:admin, :index, :import, :save], ProductImporter
 
     # Reports page
     can [:admin, :index, :customers, :orders_and_distributors, :group_buys, :bulk_coop, :payments, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :packing], :report
