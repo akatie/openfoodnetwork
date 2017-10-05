@@ -39,7 +39,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
       end
     end
 
-
     before do
       distributor.shipping_methods << sm1
       distributor.shipping_methods << sm2
@@ -61,13 +60,11 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
         page.should have_content "An item in your cart has become unavailable"
       end
     end
+
     context 'login in as user' do
       let(:user) { create(:user) }
 
-      before do
-        quick_login_as(user)
-        visit checkout_path
-
+      def fill_out_form
         toggle_shipping
         choose sm1.name
         toggle_payment
@@ -94,24 +91,104 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
         check "Save as default shipping address"
       end
 
-      it "sets user's default billing address and shipping address" do
-        user.bill_address.should be_nil
-        user.ship_address.should be_nil
+      before do
+        quick_login_as(user)
+      end
 
-        order.bill_address.should be_nil
-        order.ship_address.should be_nil
+      context "with details filled out" do
+        before do
+          visit checkout_path
+          fill_out_form
+        end
 
-        place_order
-        page.should have_content "Your order has been processed successfully"
+        it "sets user's default billing address and shipping address" do
+          user.bill_address.should be_nil
+          user.ship_address.should be_nil
 
-        order.reload.bill_address.address1.should eq '123 Your Head'
-        order.reload.ship_address.address1.should eq '123 Your Head'
+          order.bill_address.should be_nil
+          order.ship_address.should be_nil
 
-        order.customer.bill_address.address1.should eq '123 Your Head'
-        order.customer.ship_address.address1.should eq '123 Your Head'
+          place_order
+          page.should have_content "Your order has been processed successfully"
 
-        user.reload.bill_address.address1.should eq '123 Your Head'
-        user.reload.ship_address.address1.should eq '123 Your Head'
+          order.reload.bill_address.address1.should eq '123 Your Head'
+          order.reload.ship_address.address1.should eq '123 Your Head'
+
+          order.customer.bill_address.address1.should eq '123 Your Head'
+          order.customer.ship_address.address1.should eq '123 Your Head'
+
+          user.reload.bill_address.address1.should eq '123 Your Head'
+          user.reload.ship_address.address1.should eq '123 Your Head'
+        end
+
+        it "it doesn't tell about previous orders" do
+          expect(page).to_not have_content("You have an order for this order cycle already.")
+        end
+      end
+
+      context "with previous orders" do
+        let!(:prev_order) { create(:completed_order_with_totals, order_cycle: order_cycle, distributor: distributor, user: order.user) }
+
+        before do
+          order.distributor.allow_order_changes = true
+          order.distributor.save
+          visit checkout_path
+        end
+
+        it "informs about previous orders" do
+          expect(page).to have_content("You have an order for this order cycle already.")
+        end
+      end
+
+      context "with Stripe" do
+        let!(:stripe_pm) do
+          create(:stripe_payment_method,
+            distributors: [distributor],
+            name: "Stripe",
+            preferred_enterprise_id: distributor.id)
+        end
+
+        let!(:saved_card) do
+          create(:credit_card,
+          user_id: user.id,
+          month: "01",
+          year: "2025",
+          cc_type: "visa",
+          number: "1111111111111111",
+          payment_method_id: stripe_pm.id,
+          gateway_customer_profile_id: "i_am_saved")
+        end
+
+        let!(:stripe_account) { create(:stripe_account, enterprise_id: distributor.id, stripe_user_id: 'some_id') }
+
+        let(:response_mock) { { id: "ch_1234", object: "charge", amount: 2000} }
+
+        before do
+          allow(Stripe).to receive(:api_key) { "sk_test_12345" }
+          allow(Stripe).to receive(:publishable_key) { "some_key" }
+          Spree::Config.set(stripe_connect_enabled: true)
+          stub_request(:post, "https://sk_test_12345:@api.stripe.com/v1/charges")
+            .to_return(status: 200, body: JSON.generate(response_mock))
+
+          visit checkout_path
+          fill_out_form
+          toggle_payment
+          choose stripe_pm.name
+        end
+
+        it "allows use of a saved card" do
+          # shows the saved credit card dropdown
+          expect(page).to have_content I18n.t("spree.checkout.payment.stripe.used_saved_card")
+
+          # removes the input fields when a saved card is selected"
+          expect(page).to have_selector "#card-element.StripeElement"
+          select "Visa x-1111 Exp:01/2025", from: "selected_card"
+          expect(page).to_not have_selector "#card-element.StripeElement"
+
+          # allows checkout
+          place_order
+          expect(page).to have_content "Your order has been processed successfully"
+        end
       end
     end
 
@@ -135,9 +212,9 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
         toggle_shipping
         choose sm2.name
 
-        page.should have_selector 'orderdetails .cart-total', text: "$11.23"
-        page.should have_selector 'orderdetails .shipping', text: "$4.56"
-        page.should have_selector 'orderdetails .total', text: "$15.79"
+        page.should have_selector 'orderdetails .cart-total', text: with_currency(11.23)
+        page.should have_selector 'orderdetails .shipping', text: with_currency(4.56)
+        page.should have_selector 'orderdetails .total', text: with_currency(15.79)
 
         # Tax should not be displayed in checkout, as the customer's choice of shipping method
         # affects the tax and we haven't written code to live-update the tax amount when they
@@ -227,13 +304,16 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
       describe "purchasing" do
         it "takes us to the order confirmation page when we submit a complete form" do
           toggle_details
+
           within "#details" do
             fill_in "First Name", with: "Will"
             fill_in "Last Name", with: "Marshall"
             fill_in "Email", with: "test@test.com"
             fill_in "Phone", with: "0468363090"
           end
+
           toggle_billing
+
           within "#billing" do
             fill_in "Address", with: "123 Your Face"
             select "Australia", from: "Country"
@@ -241,35 +321,40 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
             fill_in "City", with: "Melbourne"
             fill_in "Postcode", with: "3066"
           end
+
           toggle_shipping
+
           within "#shipping" do
             choose sm2.name
             fill_in 'Any comments or special instructions?', with: "SpEcIaL NoTeS"
           end
+
           toggle_payment
+
           within "#payment" do
             choose pm1.name
           end
 
           expect do
             place_order
-            page.should have_content "Your order has been processed successfully"
+            expect(page).to have_content "Your order has been processed successfully"
           end.to enqueue_job ConfirmOrderJob
 
           # And the order's special instructions should be set
-          o = Spree::Order.complete.first
-          expect(o.special_instructions).to eq "SpEcIaL NoTeS"
+          order = Spree::Order.complete.first
+          expect(order.special_instructions).to eq "SpEcIaL NoTeS"
 
           # And the Spree tax summary should not be displayed
-          page.should_not have_content product.tax_category.name
+          expect(page).not_to have_content product.tax_category.name
 
           # And the total tax for the order, including shipping and fee tax, should be displayed
           # product tax    ($10.00 @ 10% = $0.91)
           # + fee tax      ($ 1.23 @ 10% = $0.11)
           # + shipping tax ($ 4.56 @ 25% = $0.91)
           #                              = $1.93
-          page.should have_content "(includes tax)"
-          page.should have_content "$1.93"
+          expect(page).to have_content '(includes tax)'
+          expect(page).to have_content with_currency(1.93)
+          expect(page).to have_content 'Back To Store'
         end
 
         context "with basic details filled" do
@@ -331,14 +416,14 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
           context "when we are charged a payment method fee (transaction fee)" do
             it "creates a payment including the transaction fee" do
               # Selecting the transaction fee, it is displayed
-              expect(page).to have_selector ".transaction-fee td", text: "$0.00"
-              expect(page).to have_selector ".total", text: "$11.23"
+              expect(page).to have_selector ".transaction-fee td", text: with_currency(0.00)
+              expect(page).to have_selector ".total", text: with_currency(11.23)
 
               toggle_payment
-              choose "#{pm2.name} ($5.67)"
+              choose "#{pm2.name} (#{with_currency(5.67)})"
 
-              expect(page).to have_selector ".transaction-fee td", text: "$5.67"
-              expect(page).to have_selector ".total", text: "$16.90"
+              expect(page).to have_selector ".transaction-fee td", text: with_currency(5.67)
+              expect(page).to have_selector ".total", text: with_currency(16.90)
 
               place_order
               expect(page).to have_content "Your order has been processed successfully"
@@ -378,7 +463,7 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
                   fill_in 'Security Code', with: '123'
 
                   place_order
-                  page.should have_content "Payment could not be processed, please check the details you entered"
+                  page.should have_content 'Bogus Gateway: Forced failure'
 
                   # Does not show duplicate shipping fee
                   visit checkout_path
@@ -402,7 +487,7 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
         o.save!
       end
 
-      it "checks out successfully" do
+      it "checks out successfully", retry: 3 do
         visit checkout_path
         checkout_as_guest
         choose sm2.name

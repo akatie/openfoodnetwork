@@ -8,7 +8,10 @@ angular.module('admin.orderCycles').controller "AdminSimpleCreateOrderCycleCtrl"
     $scope.enterprise_fees = EnterpriseFee.index(coordinator_id: ocInstance.coordinator_id)
 
   $scope.$watch 'order_cycle_form.$dirty', (newValue) ->
-      StatusMessage.display 'notice', 'You have unsaved changes' if newValue
+      StatusMessage.display 'notice', t("admin.unsaved_changes") if newValue
+
+  $scope.$watch 'order_cycle_form.$valid', (isValid) ->
+    StatusMessage.setValidation(isValid)
 
   $scope.init = (enterprises) ->
     enterprise = enterprises[Object.keys(enterprises)[0]]
@@ -46,7 +49,7 @@ angular.module('admin.orderCycles').controller "AdminSimpleCreateOrderCycleCtrl"
 
   $scope.submit = ($event, destination) ->
     $event.preventDefault()
-    StatusMessage.display 'progress', "Saving..."
+    StatusMessage.display 'progress', t('js.saving')
     OrderCycle.mirrorIncomingToOutgoingProducts()
     OrderCycle.create(destination)
 

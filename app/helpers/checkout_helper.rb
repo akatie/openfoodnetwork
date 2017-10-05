@@ -16,7 +16,7 @@ module CheckoutHelper
     enterprise_fee_adjustments = adjustments.select { |a| a.originator_type == 'EnterpriseFee' && a.source_type != 'Spree::LineItem' }
     adjustments.reject! { |a| a.originator_type == 'EnterpriseFee' && a.source_type != 'Spree::LineItem' }
     unless exclude.include? :admin_and_handling
-      adjustments << Spree::Adjustment.new(label: 'Admin & Handling', amount: enterprise_fee_adjustments.sum(&:amount))
+      adjustments << Spree::Adjustment.new(label: I18n.t(:orders_form_admin), amount: enterprise_fee_adjustments.sum(&:amount))
     end
 
     adjustments
@@ -54,12 +54,8 @@ module CheckoutHelper
   end
 
   def display_adjustment_tax_rates(adjustment)
-    tax_rate = (adjustment.included_tax / (adjustment.amount - adjustment.included_tax)).round(2)
-    if tax_rate == 0 || tax_rate.infinite?
-      ""
-    else
-      number_to_percentage(tax_rate * 100, :precision => 1)
-    end
+    tax_rates = adjustment.tax_rates
+    tax_rates.map { |tr| number_to_percentage(tr.amount * 100, :precision => 1) }.join(", ")
   end
 
   def display_adjustment_amount(adjustment)
@@ -84,7 +80,6 @@ module CheckoutHelper
     available_countries.map { |c| [c.name, c.id] }
   end
 
-
   def validated_input(name, path, args = {})
     attributes = {
       required: true,
@@ -107,20 +102,6 @@ module CheckoutHelper
     }.merge args
 
     render "shared/validated_select", name: name, path: path, options: options, attributes: attributes
-  end
-
-  def reset_order
-    distributor = current_order.distributor
-    token = current_order.token
-
-    session[:order_id] = nil
-    @current_order = nil
-    current_order(true)
-
-    current_order.set_distributor!(distributor)
-    current_order.tokenized_permission.token = token
-    current_order.tokenized_permission.save!
-    session[:access_token] = token
   end
 
   def payment_method_price(method, order)

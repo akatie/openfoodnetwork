@@ -1,3 +1,5 @@
+require 'open_food_network/available_payment_method_filter'
+
 module EnterprisesHelper
   def current_distributor
     @current_distributor ||= current_order(false).andand.distributor
@@ -21,6 +23,9 @@ module EnterprisesHelper
   def available_payment_methods
     return [] unless current_distributor.present?
     payment_methods = current_distributor.payment_methods.available(:front_end).all
+
+    filter = OpenFoodNetwork::AvailablePaymentMethodFilter.new
+    filter.filter!(payment_methods)
 
     applicator = OpenFoodNetwork::TagRuleApplicator.new(current_distributor, "FilterPaymentMethods", current_customer.andand.tag_list)
     applicator.filter!(payment_methods)
@@ -48,7 +53,7 @@ module EnterprisesHelper
 
   def enterprise_type_name(enterprise)
     if enterprise.sells == 'none'
-      enterprise.producer_profile_only ? 'Profile' : 'Supplier Only'
+      enterprise.producer_profile_only ? I18n.t(:profile) : I18n.t(:supplier_only)
     else
       "Has Shopfront"
     end
@@ -56,7 +61,7 @@ module EnterprisesHelper
 
   def enterprise_confirm_delete_message(enterprise)
     if enterprise.supplied_products.present?
-      "This will also delete the #{pluralize enterprise.supplied_products.count, 'product'} that this enterprise supplies. Are you sure you want to continue?"
+      I18n.t(:enterprise_confirm_delete_message, product: pluralize(enterprise.supplied_products.count, 'product'))
     else
       t(:are_you_sure)
     end
@@ -87,5 +92,13 @@ module EnterprisesHelper
 
   def remaining_trial_days(enterprise)
     distance_of_time_in_words(Time.zone.now, enterprise.shop_trial_start_date + Spree::Config[:shop_trial_length_days].days)
+  end
+
+  def order_changes_allowed?
+    current_order.andand.distributor.andand.allow_order_changes?
+  end
+
+  def show_bought_items?
+    order_changes_allowed? && current_order.finalised_line_items.present?
   end
 end

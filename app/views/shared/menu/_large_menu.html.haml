@@ -3,7 +3,7 @@
     %ul.left
       %li.ofn-logo
         %a{href: root_path}
-          %img{src: ContentConfig.logo.url, width: "250", height: "51"}
+          %img{src: ContentConfig.logo.url}
     %ul.center
       %li
         %a{href: main_app.shops_path}
@@ -37,6 +37,12 @@
               = t 'label_about'
 
     %ul.right
+      %li.powered-by
+        %img{src: '/favicon.ico'}
+        %span
+          = t 'powered_by'
+          %a{href: '/'}
+            = t 'title'
       - if spree_current_user.nil?
         = render 'shared/signed_out'
       - else

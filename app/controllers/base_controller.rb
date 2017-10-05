@@ -8,6 +8,7 @@ class BaseController < ApplicationController
   include Spree::Core::ControllerHelpers::Order
   include Spree::Core::ControllerHelpers::RespondWith
 
+  include I18nHelper
   include EnterprisesHelper
   include OrderCyclesHelper
 
@@ -17,14 +18,19 @@ class BaseController < ApplicationController
   # include Spree::ProductsHelper so that method is available on the controller
   include Spree::ProductsHelper
 
+  before_filter :set_locale
   before_filter :check_order_cycle_expiry
-
 
   private
 
   def set_order_cycles
+    unless @distributor.ready_for_checkout?
+      @order_cycles = OrderCycle.where('false')
+      return
+    end
+
     @order_cycles = OrderCycle.with_distributor(@distributor).active
-    .order(@distributor.preferred_shopfront_order_cycle_order)
+      .order(@distributor.preferred_shopfront_order_cycle_order)
 
     applicator = OpenFoodNetwork::TagRuleApplicator.new(@distributor, "FilterOrderCycles", current_customer.andand.tag_list)
     applicator.filter!(@order_cycles)

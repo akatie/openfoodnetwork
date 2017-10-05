@@ -4,14 +4,17 @@ Spree::OrdersController.class_eval do
   after_filter  :populate_variant_attributes, only: :populate
   before_filter :update_distribution, only: :update
   before_filter :filter_order_params, only: :update
+  before_filter :enable_embedded_shopfront
 
   prepend_before_filter :require_order_cycle, only: :edit
   prepend_before_filter :require_distributor_chosen, only: :edit
   before_filter :check_hub_ready_for_checkout, only: :edit
+  before_filter :check_at_least_one_line_item, only: :update
 
   include OrderCyclesHelper
   layout 'darkswarm'
 
+  respond_to :json
 
   # Patching to redirect to shop if order is empty
   def edit
@@ -29,10 +32,9 @@ Spree::OrdersController.class_eval do
     end
   end
 
-
   def update
     @insufficient_stock_lines = []
-    @order = current_order
+    @order = order_to_update
     unless @order
       flash[:error] = t(:order_not_found)
       redirect_to root_path and return
@@ -43,12 +45,19 @@ Spree::OrdersController.class_eval do
 
       render :edit and return unless apply_coupon_code
 
-      fire_event('spree.order.contents_changed')
+      if @order == current_order
+        fire_event('spree.order.contents_changed')
+      else
+        @order.update_distribution_charge!
+      end
+
       respond_with(@order) do |format|
         format.html do
           if params.has_key?(:checkout)
             @order.next_transition.run_callbacks if @order.cart?
             redirect_to checkout_state_path(@order.checkout_steps.first)
+          elsif @order.complete?
+            redirect_to order_path(@order)
           else
             redirect_to cart_path
           end
@@ -61,7 +70,6 @@ Spree::OrdersController.class_eval do
       respond_with(@order)
     end
   end
-
 
   def populate
     # Without intervention, the Spree::Adjustment#update_adjustable callback is called many times
@@ -89,7 +97,6 @@ Spree::OrdersController.class_eval do
       end
     end
   end
-
 
   # Report the stock levels in the order for all variant ids requested
   def stock_levels(order, variant_ids)
@@ -126,7 +133,7 @@ Spree::OrdersController.class_eval do
       distributor = Enterprise.is_distributor.find params[:order][:distributor_id]
       @order.set_distributor! distributor
 
-      flash[:notice] = 'Your hub has been selected.'
+      flash[:notice] = I18n.t(:order_choosing_hub_notice)
       redirect_to request.referer
 
     elsif params[:commit] == 'Choose Order Cycle'
@@ -134,7 +141,7 @@ Spree::OrdersController.class_eval do
       order_cycle = OrderCycle.active.find params[:order][:order_cycle_id]
       @order.set_order_cycle! order_cycle
 
-      flash[:notice] = 'Your order cycle has been selected.'
+      flash[:notice] = I18n.t(:order_choosing_hub_notice)
       redirect_to request.referer
     end
   end
@@ -160,6 +167,18 @@ Spree::OrdersController.class_eval do
 
   def order_cycle_expired
     @order_cycle = OrderCycle.find session[:expired_order_cycle_id]
+  end
+
+  def cancel
+    @order = Spree::Order.find_by_number!(params[:id])
+    authorize! :cancel, @order
+
+    if @order.cancel
+      flash[:success] = I18n.t(:orders_your_order_has_been_cancelled)
+    else
+      flash[:error] = I18n.t(:orders_could_not_cancel)
+    end
+    redirect_to request.referer || order_path(@order)
   end
 
 
@@ -201,5 +220,31 @@ Spree::OrdersController.class_eval do
   # Return it as a large integer (max 32 bit signed int)
   def wrap_json_infinity(n)
     n == Float::INFINITY ? 2147483647 : n
+  end
+
+  def order_to_update
+    return @order_to_update if defined? @order_to_update
+    return @order_to_update = current_order unless params[:id]
+    @order_to_update = changeable_order_from_number
+  end
+
+  # If a specific order is requested, return it if it is COMPLETE and
+  # changes are allowed and the user has access. Return nil if not.
+  def changeable_order_from_number
+    order = Spree::Order.complete.find_by_number(params[:id])
+    return nil unless order.andand.changes_allowed? && can?(:update, order)
+    order
+  end
+
+  def check_at_least_one_line_item
+    return unless order_to_update.andand.complete?
+
+    items = params[:order][:line_items_attributes]
+      .andand.select{ |k,attrs| attrs["quantity"].to_i > 0 }
+
+    if items.empty?
+      flash[:error] = I18n.t(:orders_cannot_remove_the_final_item)
+      redirect_to order_path(order_to_update)
+    end
   end
 end

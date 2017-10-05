@@ -4,13 +4,12 @@ Spree::Admin::OrdersController.class_eval do
   include OpenFoodNetwork::SpreeApiKeyLoader
   helper CheckoutHelper
   before_filter :load_spree_api_key, :only => :bulk_management
-
-  # We need to add expections for collection actions other than :index here
-  # because spree_auth_devise causes load_order to be called, which results
-  # in an auth failure as the @order object is nil for collection actions
-  before_filter :check_authorization, except: [:bulk_management, :managed]
+  before_filter :load_order, only: %i[show edit update fire resend invoice print]
 
   before_filter :load_distribution_choices, only: [:new, :edit, :update]
+
+  # Ensure that the distributor is set for an order when
+  before_filter :ensure_distribution, only: :new
 
   # After updating an order, the fees should be updated as well
   # Currently, adding or deleting line items does not trigger updating the
@@ -80,7 +79,7 @@ Spree::Admin::OrdersController.class_eval do
     template = if Spree::Config.invoice_style2? then "spree/admin/orders/invoice2" else "spree/admin/orders/invoice" end
     pdf = render_to_string pdf: "invoice-#{@order.number}.pdf", template: template, formats: [:html], encoding: "UTF-8"
     Spree::OrderMailer.invoice_email(@order.id, pdf).deliver
-    flash[:success] = t(:invoice_email_sent)
+    flash[:success] = t('admin.orders.invoice_email_sent')
 
     respond_with(@order) { |format| format.html { redirect_to edit_admin_order_path(@order) } }
   end
@@ -109,9 +108,9 @@ Spree::Admin::OrdersController.class_eval do
 
       # Replaced this search to filter orders to only show those distributed by current user (or all for admin user)
       @search.result.includes([:user, :shipments, :payments]).
-          distributed_by_user(spree_current_user).
-          page(params[:page]).
-          per(params[:per_page] || Spree::Config[:orders_per_page])
+        distributed_by_user(spree_current_user).
+        page(params[:page]).
+        per(params[:per_page] || Spree::Config[:orders_per_page])
     end
   end
 
@@ -131,4 +130,16 @@ Spree::Admin::OrdersController.class_eval do
                     ocs.closed +
                     ocs.undated
   end
+
+  def ensure_distribution
+    unless @order
+      @order = Spree::Order.new
+      @order.generate_order_number
+      @order.save!
+    end
+    unless @order.distribution_set?
+      render 'set_distribution', locals: { order: @order }
+    end
+  end
+
 end

@@ -54,6 +54,7 @@ First, check your dependencies: Ensure that you have Ruby 2.1.5 installed:
 Install the project's gem dependencies:
 
     cd openfoodnetwork
+    ./script/upgrade_bundler.sh
     bundle install
 
 Configure the site:
@@ -98,6 +99,17 @@ The site is configured to use
 startup time while Rails loads. See the Zeus github page for
 usage instructions.
 
+Once [npm dependencies are
+installed](https://github.com/openfoodfoundation/openfoodnetwork/wiki/Karma), AngularJS tests can be run with:
+
+    ./script/karma run
+
+If you want karma to automatically rerun the tests on file modification, use:
+
+    ./script/karma start
+
+### Multilingual
+Do not forget to run `rake tmp:cache:clear` after locales are updated to reload I18n js translations.
 
 ## Credits
 
@@ -111,7 +123,7 @@ usage instructions.
 * Maikel Linke (https://github.com/mkllnk)
 * Lynne Davis (https://github.com/lin-d-hop)
 * Paul Mackay (https://github.com/pmackay)
-* Steve Petitt (https://github.com/stveep)
+* Steve Pettitt (https://github.com/stveep)
 
 
 ## Licence

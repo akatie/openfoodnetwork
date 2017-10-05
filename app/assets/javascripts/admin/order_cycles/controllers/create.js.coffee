@@ -12,7 +12,10 @@ angular.module('admin.orderCycles')
     $scope.StatusMessage = StatusMessage
 
     $scope.$watch 'order_cycle_form.$dirty', (newValue) ->
-      StatusMessage.display 'notice', 'You have unsaved changes' if newValue
+      StatusMessage.display 'notice', t("admin.unsaved_changes") if newValue
+
+    $scope.$watch 'order_cycle_form.$valid', (isValid) ->
+      StatusMessage.setValidation(isValid)
 
     $scope.loaded = ->
       Enterprise.loaded && EnterpriseFee.loaded && OrderCycle.loaded
@@ -81,7 +84,7 @@ angular.module('admin.orderCycles')
 
     $scope.submit = ($event, destination) ->
       $event.preventDefault()
-      StatusMessage.display 'progress', "Saving..."
+      StatusMessage.display 'progress', t('js.saving')
       OrderCycle.create(destination)
 
     $scope.cancel = (destination) ->
