@@ -11,20 +11,7 @@
 #
 # It's strongly recommended to check this file into your version control system.
 
-ActiveRecord::Schema.define(:version => 20170921065259) do
-
-  create_table "account_invoices", :force => true do |t|
-    t.integer  "user_id",    :null => false
-    t.integer  "order_id"
-    t.integer  "year",       :null => false
-    t.integer  "month",      :null => false
-    t.datetime "issued_at"
-    t.datetime "created_at", :null => false
-    t.datetime "updated_at", :null => false
-  end
-
-  add_index "account_invoices", ["order_id"], :name => "index_account_invoices_on_order_id"
-  add_index "account_invoices", ["user_id"], :name => "index_account_invoices_on_user_id"
+ActiveRecord::Schema.define(:version => 20191023172424) do
 
   create_table "adjustment_metadata", :force => true do |t|
     t.integer "adjustment_id"
@@ -36,28 +23,6 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
 
   add_index "adjustment_metadata", ["adjustment_id"], :name => "index_adjustment_metadata_on_adjustment_id"
   add_index "adjustment_metadata", ["enterprise_id"], :name => "index_adjustment_metadata_on_enterprise_id"
-
-  create_table "billable_periods", :force => true do |t|
-    t.integer  "enterprise_id"
-    t.integer  "owner_id"
-    t.datetime "begins_at"
-    t.datetime "ends_at"
-    t.string   "sells"
-    t.boolean  "trial",              :default => false
-    t.decimal  "turnover",           :default => 0.0
-    t.datetime "deleted_at"
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.integer  "account_invoice_id",                    :null => false
-  end
-
-  add_index "billable_periods", ["account_invoice_id"], :name => "index_billable_periods_on_account_invoice_id"
-
-  create_table "carts", :force => true do |t|
-    t.integer "user_id"
-  end
-
-  add_index "carts", ["user_id"], :name => "index_carts_on_user_id"
 
   create_table "column_preferences", :force => true do |t|
     t.integer  "user_id",     :null => false
@@ -79,15 +44,16 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   add_index "coordinator_fees", ["order_cycle_id"], :name => "index_coordinator_fees_on_order_cycle_id"
 
   create_table "customers", :force => true do |t|
-    t.string   "email",           :null => false
-    t.integer  "enterprise_id",   :null => false
+    t.string   "email",                              :null => false
+    t.integer  "enterprise_id",                      :null => false
     t.string   "code"
     t.integer  "user_id"
-    t.datetime "created_at",      :null => false
-    t.datetime "updated_at",      :null => false
+    t.datetime "created_at",                         :null => false
+    t.datetime "updated_at",                         :null => false
     t.integer  "bill_address_id"
     t.integer  "ship_address_id"
     t.string   "name"
+    t.boolean  "allow_charges",   :default => false, :null => false
   end
 
   add_index "customers", ["bill_address_id"], :name => "index_customers_on_bill_address_id"
@@ -199,6 +165,7 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   create_table "enterprise_roles", :force => true do |t|
     t.integer "user_id"
     t.integer "enterprise_id"
+    t.boolean "receives_notifications", :default => false
   end
 
   add_index "enterprise_roles", ["enterprise_id", "user_id"], :name => "index_enterprise_roles_on_enterprise_id_and_user_id", :unique => true
@@ -208,18 +175,17 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
 
   create_table "enterprises", :force => true do |t|
     t.string   "name"
-    t.string   "description"
+    t.text     "description"
     t.text     "long_description"
     t.boolean  "is_primary_producer"
-    t.string   "contact"
+    t.string   "contact_name"
     t.string   "phone"
-    t.string   "email"
     t.string   "website"
     t.string   "twitter"
     t.string   "abn"
     t.string   "acn"
     t.integer  "address_id"
-    t.string   "pickup_times"
+    t.text     "pickup_times"
     t.string   "next_collection_at"
     t.datetime "created_at",                                   :null => false
     t.datetime "updated_at",                                   :null => false
@@ -238,11 +204,6 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.string   "linkedin"
     t.integer  "owner_id",                                     :null => false
     t.string   "sells",                    :default => "none", :null => false
-    t.string   "confirmation_token"
-    t.datetime "confirmed_at"
-    t.datetime "confirmation_sent_at"
-    t.string   "unconfirmed_email"
-    t.datetime "shop_trial_start_date"
     t.boolean  "producer_profile_only",    :default => false
     t.string   "permalink",                                    :null => false
     t.boolean  "charges_sales_tax",        :default => false,  :null => false
@@ -252,10 +213,10 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.text     "invoice_text"
     t.boolean  "display_invoice_logo",     :default => false
     t.boolean  "allow_order_changes",      :default => false,  :null => false
+    t.boolean  "enable_subscriptions",     :default => false,  :null => false
   end
 
   add_index "enterprises", ["address_id"], :name => "index_enterprises_on_address_id"
-  add_index "enterprises", ["confirmation_token"], :name => "index_enterprises_on_confirmation_token", :unique => true
   add_index "enterprises", ["is_primary_producer", "sells"], :name => "index_enterprises_on_is_primary_producer_and_sells"
   add_index "enterprises", ["name"], :name => "index_enterprises_on_name", :unique => true
   add_index "enterprises", ["owner_id"], :name => "index_enterprises_on_owner_id"
@@ -286,17 +247,15 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.integer  "order_cycle_id"
     t.integer  "sender_id"
     t.integer  "receiver_id"
-    t.integer  "payment_enterprise_id"
-    t.string   "pickup_time"
-    t.string   "pickup_instructions"
+    t.text     "pickup_time"
+    t.text     "pickup_instructions"
     t.datetime "created_at",                               :null => false
     t.datetime "updated_at",                               :null => false
     t.boolean  "incoming",              :default => false, :null => false
-    t.string   "receival_instructions"
+    t.text     "receival_instructions"
   end
 
   add_index "exchanges", ["order_cycle_id"], :name => "index_exchanges_on_order_cycle_id"
-  add_index "exchanges", ["payment_enterprise_id"], :name => "index_exchanges_on_payment_enterprise_id"
   add_index "exchanges", ["receiver_id"], :name => "index_exchanges_on_receiver_id"
   add_index "exchanges", ["sender_id"], :name => "index_exchanges_on_sender_id"
 
@@ -309,6 +268,14 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   end
 
   add_index "inventory_items", ["enterprise_id", "variant_id"], :name => "index_inventory_items_on_enterprise_id_and_variant_id", :unique => true
+
+  create_table "order_cycle_schedules", :force => true do |t|
+    t.integer "order_cycle_id", :null => false
+    t.integer "schedule_id",    :null => false
+  end
+
+  add_index "order_cycle_schedules", ["order_cycle_id"], :name => "index_order_cycle_schedules_on_order_cycle_id"
+  add_index "order_cycle_schedules", ["schedule_id"], :name => "index_order_cycle_schedules_on_schedule_id"
 
   create_table "order_cycles", :force => true do |t|
     t.string   "name"
@@ -332,17 +299,26 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   add_index "producer_properties", ["producer_id"], :name => "index_producer_properties_on_producer_id"
   add_index "producer_properties", ["property_id"], :name => "index_producer_properties_on_property_id"
 
-  create_table "product_distributions", :force => true do |t|
-    t.integer  "product_id"
-    t.integer  "distributor_id"
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.integer  "enterprise_fee_id"
+  create_table "proxy_orders", :force => true do |t|
+    t.integer  "subscription_id", :null => false
+    t.integer  "order_id"
+    t.datetime "canceled_at"
+    t.datetime "created_at",      :null => false
+    t.datetime "updated_at",      :null => false
+    t.integer  "order_cycle_id",  :null => false
+    t.datetime "placed_at"
+    t.datetime "confirmed_at"
   end
 
-  add_index "product_distributions", ["distributor_id"], :name => "index_product_distributions_on_distributor_id"
-  add_index "product_distributions", ["enterprise_fee_id"], :name => "index_product_distributions_on_enterprise_fee_id"
-  add_index "product_distributions", ["product_id"], :name => "index_product_distributions_on_product_id"
+  add_index "proxy_orders", ["order_cycle_id", "subscription_id"], :name => "index_proxy_orders_on_order_cycle_id_and_subscription_id", :unique => true
+  add_index "proxy_orders", ["order_id"], :name => "index_proxy_orders_on_order_id", :unique => true
+  add_index "proxy_orders", ["subscription_id"], :name => "index_proxy_orders_on_subscription_id"
+
+  create_table "schedules", :force => true do |t|
+    t.string   "name",       :null => false
+    t.datetime "created_at", :null => false
+    t.datetime "updated_at", :null => false
+  end
 
   create_table "sessions", :force => true do |t|
     t.string   "session_id", :null => false
@@ -465,12 +441,13 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.string   "start_year"
     t.string   "issue_number"
     t.integer  "address_id"
-    t.datetime "created_at",                  :null => false
-    t.datetime "updated_at",                  :null => false
+    t.datetime "created_at",                                     :null => false
+    t.datetime "updated_at",                                     :null => false
     t.string   "gateway_customer_profile_id"
     t.string   "gateway_payment_profile_id"
     t.integer  "user_id"
     t.integer  "payment_method_id"
+    t.boolean  "is_default",                  :default => false
   end
 
   add_index "spree_credit_cards", ["payment_method_id"], :name => "index_spree_credit_cards_on_payment_method_id"
@@ -489,14 +466,14 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   end
 
   create_table "spree_inventory_units", :force => true do |t|
-    t.integer  "lock_version",            :default => 0
     t.string   "state"
     t.integer  "variant_id"
     t.integer  "order_id"
-    t.datetime "created_at",                             :null => false
-    t.datetime "updated_at",                             :null => false
+    t.datetime "created_at",                                :null => false
+    t.datetime "updated_at",                                :null => false
     t.integer  "shipment_id"
     t.integer  "return_authorization_id"
+    t.boolean  "pending",                 :default => true
   end
 
   add_index "spree_inventory_units", ["order_id"], :name => "index_inventory_units_on_order_id"
@@ -506,15 +483,16 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   create_table "spree_line_items", :force => true do |t|
     t.integer  "order_id"
     t.integer  "variant_id"
-    t.integer  "quantity",                                            :null => false
-    t.decimal  "price",                :precision => 8,  :scale => 2, :null => false
-    t.datetime "created_at",                                          :null => false
-    t.datetime "updated_at",                                          :null => false
+    t.integer  "quantity",                                           :null => false
+    t.decimal  "price",               :precision => 8,  :scale => 2, :null => false
+    t.datetime "created_at",                                         :null => false
+    t.datetime "updated_at",                                         :null => false
     t.integer  "max_quantity"
     t.string   "currency"
-    t.decimal  "distribution_fee",     :precision => 10, :scale => 2
-    t.string   "shipping_method_name"
-    t.decimal  "final_weight_volume",  :precision => 10, :scale => 2
+    t.decimal  "distribution_fee",    :precision => 10, :scale => 2
+    t.decimal  "final_weight_volume", :precision => 10, :scale => 2
+    t.decimal  "cost_price",          :precision => 8,  :scale => 2
+    t.integer  "tax_category_id"
   end
 
   add_index "spree_line_items", ["order_id"], :name => "index_line_items_on_order_id"
@@ -541,11 +519,6 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.datetime "created_at",                                 :null => false
     t.datetime "updated_at",                                 :null => false
     t.integer  "position",                    :default => 0, :null => false
-  end
-
-  create_table "spree_option_types_prototypes", :id => false, :force => true do |t|
-    t.integer "prototype_id"
-    t.integer "option_type_id"
   end
 
   create_table "spree_option_values", :force => true do |t|
@@ -585,7 +558,6 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.integer  "bill_address_id"
     t.integer  "ship_address_id"
     t.decimal  "payment_total",                      :precision => 10, :scale => 2, :default => 0.0
-    t.integer  "shipping_method_id"
     t.string   "shipment_state"
     t.string   "payment_state"
     t.string   "email"
@@ -594,12 +566,15 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.integer  "order_cycle_id"
     t.string   "currency"
     t.string   "last_ip_address"
-    t.integer  "cart_id"
     t.integer  "customer_id"
+    t.integer  "created_by_id"
   end
 
+  add_index "spree_orders", ["completed_at", "user_id", "created_by_id", "created_at"], :name => "spree_orders_completed_at_user_id_created_by_id_created_at_idx"
   add_index "spree_orders", ["customer_id"], :name => "index_spree_orders_on_customer_id"
+  add_index "spree_orders", ["distributor_id"], :name => "index_spree_orders_on_distributor_id"
   add_index "spree_orders", ["number"], :name => "index_orders_on_number"
+  add_index "spree_orders", ["order_cycle_id"], :name => "index_spree_orders_on_order_cycle_id"
 
   create_table "spree_payment_methods", :force => true do |t|
     t.string   "type"
@@ -670,9 +645,10 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   add_index "spree_preferences", ["key"], :name => "index_spree_preferences_on_key", :unique => true
 
   create_table "spree_prices", :force => true do |t|
-    t.integer "variant_id",                               :null => false
-    t.decimal "amount",     :precision => 8, :scale => 2
-    t.string  "currency"
+    t.integer  "variant_id",                               :null => false
+    t.decimal  "amount",     :precision => 8, :scale => 2
+    t.string   "currency"
+    t.datetime "deleted_at"
   end
 
   add_index "spree_prices", ["variant_id"], :name => "index_spree_prices_on_variant_id"
@@ -720,7 +696,7 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   add_index "spree_product_scopes", ["product_group_id"], :name => "index_product_scopes_on_product_group_id"
 
   create_table "spree_products", :force => true do |t|
-    t.string   "name",                 :default => "",    :null => false
+    t.string   "name",                 :default => "",   :null => false
     t.text     "description"
     t.datetime "available_on"
     t.datetime "deleted_at"
@@ -729,19 +705,17 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.string   "meta_keywords"
     t.integer  "tax_category_id"
     t.integer  "shipping_category_id"
-    t.datetime "created_at",                              :null => false
-    t.datetime "updated_at",                              :null => false
-    t.integer  "count_on_hand",        :default => 0
+    t.datetime "created_at",                             :null => false
+    t.datetime "updated_at",                             :null => false
     t.integer  "supplier_id"
     t.boolean  "group_buy"
     t.float    "group_buy_unit_size"
-    t.boolean  "on_demand",            :default => false
     t.string   "variant_unit"
     t.float    "variant_unit_scale"
     t.string   "variant_unit_name"
     t.text     "notes"
-    t.integer  "primary_taxon_id",                        :null => false
-    t.boolean  "inherits_properties",  :default => true,  :null => false
+    t.integer  "primary_taxon_id",                       :null => false
+    t.boolean  "inherits_properties",  :default => true, :null => false
   end
 
   add_index "spree_products", ["available_on"], :name => "index_products_on_available_on"
@@ -806,25 +780,15 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.datetime "updated_at",   :null => false
   end
 
-  create_table "spree_properties_prototypes", :id => false, :force => true do |t|
-    t.integer "prototype_id"
-    t.integer "property_id"
-  end
-
-  create_table "spree_prototypes", :force => true do |t|
-    t.string   "name"
-    t.datetime "created_at", :null => false
-    t.datetime "updated_at", :null => false
-  end
-
   create_table "spree_return_authorizations", :force => true do |t|
     t.string   "number"
     t.string   "state"
-    t.decimal  "amount",     :precision => 10, :scale => 2, :default => 0.0, :null => false
+    t.decimal  "amount",            :precision => 10, :scale => 2, :default => 0.0, :null => false
     t.integer  "order_id"
     t.text     "reason"
-    t.datetime "created_at",                                                 :null => false
-    t.datetime "updated_at",                                                 :null => false
+    t.datetime "created_at",                                                        :null => false
+    t.datetime "updated_at",                                                        :null => false
+    t.integer  "stock_location_id"
   end
 
   create_table "spree_roles", :force => true do |t|
@@ -842,18 +806,18 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   create_table "spree_shipments", :force => true do |t|
     t.string   "tracking"
     t.string   "number"
-    t.decimal  "cost",               :precision => 8, :scale => 2
+    t.decimal  "cost",              :precision => 8, :scale => 2
     t.datetime "shipped_at"
     t.integer  "order_id"
-    t.integer  "shipping_method_id"
     t.integer  "address_id"
-    t.datetime "created_at",                                       :null => false
-    t.datetime "updated_at",                                       :null => false
+    t.datetime "created_at",                                      :null => false
+    t.datetime "updated_at",                                      :null => false
     t.string   "state"
+    t.integer  "stock_location_id"
   end
 
   add_index "spree_shipments", ["number"], :name => "index_shipments_on_number"
-  add_index "spree_shipments", ["order_id"], :name => "index_spree_shipments_on_order_id"
+  add_index "spree_shipments", ["order_id"], :name => "index_spree_shipments_on_order_id", :unique => true
 
   create_table "spree_shipping_categories", :force => true do |t|
     t.string   "name"
@@ -862,21 +826,42 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.boolean  "temperature_controlled", :default => false, :null => false
   end
 
+  create_table "spree_shipping_method_categories", :force => true do |t|
+    t.integer  "shipping_method_id",   :null => false
+    t.integer  "shipping_category_id", :null => false
+    t.datetime "created_at",           :null => false
+    t.datetime "updated_at",           :null => false
+  end
+
+  add_index "spree_shipping_method_categories", ["shipping_category_id"], :name => "index_spree_shipping_method_categories_on_shipping_category_id"
+  add_index "spree_shipping_method_categories", ["shipping_method_id"], :name => "index_spree_shipping_method_categories_on_shipping_method_id"
+
   create_table "spree_shipping_methods", :force => true do |t|
     t.string   "name"
-    t.integer  "zone_id"
     t.datetime "created_at",                             :null => false
     t.datetime "updated_at",                             :null => false
     t.string   "display_on"
-    t.integer  "shipping_category_id"
-    t.boolean  "match_none"
-    t.boolean  "match_all"
-    t.boolean  "match_one"
     t.datetime "deleted_at"
     t.boolean  "require_ship_address", :default => true
     t.text     "description"
     t.string   "tracking_url"
   end
+
+  create_table "spree_shipping_methods_zones", :id => false, :force => true do |t|
+    t.integer "shipping_method_id"
+    t.integer "zone_id"
+  end
+
+  create_table "spree_shipping_rates", :force => true do |t|
+    t.integer  "shipment_id"
+    t.integer  "shipping_method_id"
+    t.boolean  "selected",                                         :default => false
+    t.decimal  "cost",               :precision => 8, :scale => 2, :default => 0.0
+    t.datetime "created_at",                                                          :null => false
+    t.datetime "updated_at",                                                          :null => false
+  end
+
+  add_index "spree_shipping_rates", ["shipment_id", "shipping_method_id"], :name => "spree_shipping_rates_join_index", :unique => true
 
   create_table "spree_skrill_transactions", :force => true do |t|
     t.string   "email"
@@ -906,6 +891,62 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.integer "country_id"
   end
 
+  create_table "spree_stock_items", :force => true do |t|
+    t.integer  "stock_location_id"
+    t.integer  "variant_id"
+    t.integer  "count_on_hand",     :default => 0,     :null => false
+    t.datetime "created_at",                           :null => false
+    t.datetime "updated_at",                           :null => false
+    t.boolean  "backorderable",     :default => false
+  end
+
+  add_index "spree_stock_items", ["stock_location_id", "variant_id"], :name => "stock_item_by_loc_and_var_id"
+  add_index "spree_stock_items", ["stock_location_id"], :name => "index_spree_stock_items_on_stock_location_id"
+  add_index "spree_stock_items", ["variant_id"], :name => "index_spree_stock_items_on_variant_id", :unique => true
+
+  create_table "spree_stock_locations", :force => true do |t|
+    t.string   "name"
+    t.datetime "created_at",                                :null => false
+    t.datetime "updated_at",                                :null => false
+    t.string   "address1"
+    t.string   "address2"
+    t.string   "city"
+    t.integer  "state_id"
+    t.string   "state_name"
+    t.integer  "country_id"
+    t.string   "zipcode"
+    t.string   "phone"
+    t.boolean  "active",                 :default => true
+    t.boolean  "backorderable_default",  :default => false
+    t.boolean  "propagate_all_variants", :default => true
+  end
+
+  create_table "spree_stock_movements", :force => true do |t|
+    t.integer  "stock_item_id"
+    t.integer  "quantity",        :default => 0
+    t.string   "action"
+    t.datetime "created_at",                     :null => false
+    t.datetime "updated_at",                     :null => false
+    t.integer  "originator_id"
+    t.string   "originator_type"
+  end
+
+  add_index "spree_stock_movements", ["stock_item_id"], :name => "index_spree_stock_movements_on_stock_item_id"
+
+  create_table "spree_stock_transfers", :force => true do |t|
+    t.string   "type"
+    t.string   "reference"
+    t.integer  "source_location_id"
+    t.integer  "destination_location_id"
+    t.datetime "created_at",              :null => false
+    t.datetime "updated_at",              :null => false
+    t.string   "number"
+  end
+
+  add_index "spree_stock_transfers", ["destination_location_id"], :name => "index_spree_stock_transfers_on_destination_location_id"
+  add_index "spree_stock_transfers", ["number"], :name => "index_spree_stock_transfers_on_number"
+  add_index "spree_stock_transfers", ["source_location_id"], :name => "index_spree_stock_transfers_on_source_location_id"
+
   create_table "spree_tax_categories", :force => true do |t|
     t.string   "name"
     t.string   "description"
@@ -924,6 +965,7 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.boolean  "included_in_price",                                :default => false
     t.string   "name"
     t.boolean  "show_rate_in_label",                               :default => true
+    t.datetime "deleted_at"
   end
 
   create_table "spree_taxonomies", :force => true do |t|
@@ -1002,10 +1044,15 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.string   "spree_api_key",          :limit => 48
     t.datetime "reset_password_sent_at"
     t.string   "api_key",                :limit => 40
-    t.integer  "enterprise_limit",                     :default => 1, :null => false
+    t.integer  "enterprise_limit",                     :default => 5, :null => false
     t.string   "locale",                 :limit => 5
+    t.string   "confirmation_token"
+    t.datetime "confirmed_at"
+    t.datetime "confirmation_sent_at"
+    t.string   "unconfirmed_email"
   end
 
+  add_index "spree_users", ["confirmation_token"], :name => "index_spree_users_on_confirmation_token", :unique => true
   add_index "spree_users", ["email"], :name => "email_idx_unique", :unique => true
   add_index "spree_users", ["persistence_token"], :name => "index_users_on_persistence_token"
 
@@ -1018,19 +1065,18 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.datetime "deleted_at"
     t.boolean  "is_master",                                      :default => false
     t.integer  "product_id"
-    t.integer  "count_on_hand",                                  :default => 0
     t.decimal  "cost_price",       :precision => 8, :scale => 2
     t.integer  "position"
-    t.integer  "lock_version",                                   :default => 0
-    t.boolean  "on_demand",                                      :default => false
     t.string   "cost_currency"
     t.float    "unit_value"
     t.string   "unit_description",                               :default => ""
     t.string   "display_name"
     t.string   "display_as"
+    t.datetime "import_date"
   end
 
   add_index "spree_variants", ["product_id"], :name => "index_variants_on_product_id"
+  add_index "spree_variants", ["sku"], :name => "index_spree_variants_on_sku"
 
   create_table "spree_zone_members", :force => true do |t|
     t.integer  "zoneable_id"
@@ -1058,6 +1104,44 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   end
 
   add_index "stripe_accounts", ["enterprise_id"], :name => "index_stripe_accounts_on_enterprise_id", :unique => true
+
+  create_table "subscription_line_items", :force => true do |t|
+    t.integer  "subscription_id",                               :null => false
+    t.integer  "variant_id",                                    :null => false
+    t.integer  "quantity",                                      :null => false
+    t.datetime "created_at",                                    :null => false
+    t.datetime "updated_at",                                    :null => false
+    t.decimal  "price_estimate",  :precision => 8, :scale => 2
+  end
+
+  add_index "subscription_line_items", ["subscription_id"], :name => "index_subscription_line_items_on_subscription_id"
+  add_index "subscription_line_items", ["variant_id"], :name => "index_subscription_line_items_on_variant_id"
+
+  create_table "subscriptions", :force => true do |t|
+    t.integer  "shop_id",                                             :null => false
+    t.integer  "customer_id",                                         :null => false
+    t.integer  "schedule_id",                                         :null => false
+    t.integer  "payment_method_id",                                   :null => false
+    t.integer  "shipping_method_id",                                  :null => false
+    t.datetime "begins_at"
+    t.datetime "ends_at"
+    t.datetime "created_at",                                          :null => false
+    t.datetime "updated_at",                                          :null => false
+    t.integer  "bill_address_id",                                     :null => false
+    t.integer  "ship_address_id",                                     :null => false
+    t.datetime "canceled_at"
+    t.datetime "paused_at"
+    t.decimal  "shipping_fee_estimate", :precision => 8, :scale => 2
+    t.decimal  "payment_fee_estimate",  :precision => 8, :scale => 2
+  end
+
+  add_index "subscriptions", ["bill_address_id"], :name => "index_subscriptions_on_bill_address_id"
+  add_index "subscriptions", ["customer_id"], :name => "index_subscriptions_on_customer_id"
+  add_index "subscriptions", ["payment_method_id"], :name => "index_subscriptions_on_payment_method_id"
+  add_index "subscriptions", ["schedule_id"], :name => "index_subscriptions_on_schedule_id"
+  add_index "subscriptions", ["ship_address_id"], :name => "index_subscriptions_on_ship_address_id"
+  add_index "subscriptions", ["shipping_method_id"], :name => "index_subscriptions_on_shipping_method_id"
+  add_index "subscriptions", ["shop_id"], :name => "index_subscriptions_on_shop_id"
 
   create_table "suburbs", :force => true do |t|
     t.string  "name"
@@ -1106,6 +1190,7 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
     t.string   "sku"
     t.boolean  "on_demand"
     t.datetime "permission_revoked_at"
+    t.datetime "import_date"
   end
 
   add_index "variant_overrides", ["variant_id", "hub_id"], :name => "index_variant_overrides_on_variant_id_and_hub_id"
@@ -1121,17 +1206,8 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
 
   add_index "versions", ["item_type", "item_id"], :name => "index_versions_on_item_type_and_item_id"
 
-  add_foreign_key "account_invoices", "spree_orders", name: "account_invoices_order_id_fk", column: "order_id"
-  add_foreign_key "account_invoices", "spree_users", name: "account_invoices_user_id_fk", column: "user_id"
-
   add_foreign_key "adjustment_metadata", "enterprises", name: "adjustment_metadata_enterprise_id_fk"
   add_foreign_key "adjustment_metadata", "spree_adjustments", name: "adjustment_metadata_adjustment_id_fk", column: "adjustment_id", dependent: :delete
-
-  add_foreign_key "billable_periods", "account_invoices", name: "billable_periods_account_invoice_id_fk"
-  add_foreign_key "billable_periods", "enterprises", name: "bill_items_enterprise_id_fk"
-  add_foreign_key "billable_periods", "spree_users", name: "bill_items_owner_id_fk", column: "owner_id"
-
-  add_foreign_key "carts", "spree_users", name: "carts_user_id_fk", column: "user_id"
 
   add_foreign_key "coordinator_fees", "enterprise_fees", name: "coordinator_fees_enterprise_fee_id_fk"
   add_foreign_key "coordinator_fees", "order_cycles", name: "coordinator_fees_order_cycle_id_fk"
@@ -1173,19 +1249,21 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   add_foreign_key "exchange_variants", "exchanges", name: "exchange_variants_exchange_id_fk"
   add_foreign_key "exchange_variants", "spree_variants", name: "exchange_variants_variant_id_fk", column: "variant_id"
 
-  add_foreign_key "exchanges", "enterprises", name: "exchanges_payment_enterprise_id_fk", column: "payment_enterprise_id"
   add_foreign_key "exchanges", "enterprises", name: "exchanges_receiver_id_fk", column: "receiver_id"
   add_foreign_key "exchanges", "enterprises", name: "exchanges_sender_id_fk", column: "sender_id"
   add_foreign_key "exchanges", "order_cycles", name: "exchanges_order_cycle_id_fk"
+
+  add_foreign_key "order_cycle_schedules", "order_cycles", name: "oc_schedules_order_cycle_id_fk"
+  add_foreign_key "order_cycle_schedules", "schedules", name: "oc_schedules_schedule_id_fk"
 
   add_foreign_key "order_cycles", "enterprises", name: "order_cycles_coordinator_id_fk", column: "coordinator_id"
 
   add_foreign_key "producer_properties", "enterprises", name: "producer_properties_producer_id_fk", column: "producer_id"
   add_foreign_key "producer_properties", "spree_properties", name: "producer_properties_property_id_fk", column: "property_id"
 
-  add_foreign_key "product_distributions", "enterprise_fees", name: "product_distributions_enterprise_fee_id_fk"
-  add_foreign_key "product_distributions", "enterprises", name: "product_distributions_distributor_id_fk", column: "distributor_id"
-  add_foreign_key "product_distributions", "spree_products", name: "product_distributions_product_id_fk", column: "product_id"
+  add_foreign_key "proxy_orders", "order_cycles", name: "proxy_orders_order_cycle_id_fk"
+  add_foreign_key "proxy_orders", "spree_orders", name: "order_id_fk", column: "order_id"
+  add_foreign_key "proxy_orders", "subscriptions", name: "proxy_orders_subscription_id_fk"
 
   add_foreign_key "spree_addresses", "spree_countries", name: "spree_addresses_country_id_fk", column: "country_id"
   add_foreign_key "spree_addresses", "spree_states", name: "spree_addresses_state_id_fk", column: "state_id"
@@ -1198,15 +1276,11 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   add_foreign_key "spree_line_items", "spree_orders", name: "spree_line_items_order_id_fk", column: "order_id"
   add_foreign_key "spree_line_items", "spree_variants", name: "spree_line_items_variant_id_fk", column: "variant_id"
 
-  add_foreign_key "spree_option_types_prototypes", "spree_option_types", name: "spree_option_types_prototypes_option_type_id_fk", column: "option_type_id"
-  add_foreign_key "spree_option_types_prototypes", "spree_prototypes", name: "spree_option_types_prototypes_prototype_id_fk", column: "prototype_id"
-
   add_foreign_key "spree_option_values", "spree_option_types", name: "spree_option_values_option_type_id_fk", column: "option_type_id"
 
   add_foreign_key "spree_option_values_variants", "spree_option_values", name: "spree_option_values_variants_option_value_id_fk", column: "option_value_id"
   add_foreign_key "spree_option_values_variants", "spree_variants", name: "spree_option_values_variants_variant_id_fk", column: "variant_id"
 
-  add_foreign_key "spree_orders", "carts", name: "spree_orders_cart_id_fk"
   add_foreign_key "spree_orders", "customers", name: "spree_orders_customer_id_fk"
   add_foreign_key "spree_orders", "enterprises", name: "spree_orders_distributor_id_fk", column: "distributor_id"
   add_foreign_key "spree_orders", "order_cycles", name: "spree_orders_order_cycle_id_fk"
@@ -1243,9 +1317,6 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
 
   add_foreign_key "spree_promotion_rules", "spree_activators", name: "spree_promotion_rules_activator_id_fk", column: "activator_id"
 
-  add_foreign_key "spree_properties_prototypes", "spree_properties", name: "spree_properties_prototypes_property_id_fk", column: "property_id"
-  add_foreign_key "spree_properties_prototypes", "spree_prototypes", name: "spree_properties_prototypes_prototype_id_fk", column: "prototype_id"
-
   add_foreign_key "spree_return_authorizations", "spree_orders", name: "spree_return_authorizations_order_id_fk", column: "order_id"
 
   add_foreign_key "spree_roles_users", "spree_roles", name: "spree_roles_users_role_id_fk", column: "role_id"
@@ -1253,9 +1324,6 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
 
   add_foreign_key "spree_shipments", "spree_addresses", name: "spree_shipments_address_id_fk", column: "address_id"
   add_foreign_key "spree_shipments", "spree_orders", name: "spree_shipments_order_id_fk", column: "order_id"
-
-  add_foreign_key "spree_shipping_methods", "spree_shipping_categories", name: "spree_shipping_methods_shipping_category_id_fk", column: "shipping_category_id"
-  add_foreign_key "spree_shipping_methods", "spree_zones", name: "spree_shipping_methods_zone_id_fk", column: "zone_id"
 
   add_foreign_key "spree_state_changes", "spree_users", name: "spree_state_changes_user_id_fk", column: "user_id"
 
@@ -1273,6 +1341,17 @@ ActiveRecord::Schema.define(:version => 20170921065259) do
   add_foreign_key "spree_variants", "spree_products", name: "spree_variants_product_id_fk", column: "product_id"
 
   add_foreign_key "spree_zone_members", "spree_zones", name: "spree_zone_members_zone_id_fk", column: "zone_id"
+
+  add_foreign_key "subscription_line_items", "spree_variants", name: "subscription_line_items_variant_id_fk", column: "variant_id"
+  add_foreign_key "subscription_line_items", "subscriptions", name: "subscription_line_items_subscription_id_fk"
+
+  add_foreign_key "subscriptions", "customers", name: "subscriptions_customer_id_fk"
+  add_foreign_key "subscriptions", "enterprises", name: "subscriptions_shop_id_fk", column: "shop_id"
+  add_foreign_key "subscriptions", "schedules", name: "subscriptions_schedule_id_fk"
+  add_foreign_key "subscriptions", "spree_addresses", name: "subscriptions_bill_address_id_fk", column: "bill_address_id"
+  add_foreign_key "subscriptions", "spree_addresses", name: "subscriptions_ship_address_id_fk", column: "ship_address_id"
+  add_foreign_key "subscriptions", "spree_payment_methods", name: "subscriptions_payment_method_id_fk", column: "payment_method_id"
+  add_foreign_key "subscriptions", "spree_shipping_methods", name: "subscriptions_shipping_method_id_fk", column: "shipping_method_id"
 
   add_foreign_key "suburbs", "spree_states", name: "suburbs_state_id_fk", column: "state_id"
 

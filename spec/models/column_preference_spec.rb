@@ -10,18 +10,20 @@ describe ColumnPreference, type: :model do
     let(:user) { create(:user) }
     let!(:col1_pref) { ColumnPreference.create(user_id: user.id, action_name: 'some_action', column_name: 'col1', visible: true) }
     let!(:col2_pref) { ColumnPreference.create(user_id: user.id, action_name: 'some_action', column_name: 'col2', visible: false) }
-    let(:defaults) { {
-      col1:   { name: "col1", visible: false },
-      col2:   { name: "col2", visible: true },
-      col3:   { name: "col3", visible: false },
-    } }
+    let(:defaults) {
+      {
+        col1: { name: "col1", visible: false },
+        col2: { name: "col2", visible: true },
+        col3: { name: "col3", visible: false },
+      }
+    }
 
     context "when the user has preferences stored for the given action" do
       before do
         allow(ColumnPreference).to receive(:some_action_columns) { defaults }
       end
 
-      let(:preferences) { ColumnPreference.for(user, :some_action)}
+      let(:preferences) { ColumnPreference.for(user, :some_action) }
 
       it "builds an entry for each column listed in the defaults" do
         expect(preferences.count).to eq 3
@@ -43,7 +45,7 @@ describe ColumnPreference, type: :model do
         allow(ColumnPreference).to receive(:some_action_columns) { defaults }
       end
 
-      let(:preferences) { ColumnPreference.for(create(:user), :some_action)}
+      let(:preferences) { ColumnPreference.for(create(:user), :some_action) }
 
       it "builds an entry for each column listed in the defaults" do
         expect(preferences.count).to eq 3
@@ -53,6 +55,33 @@ describe ColumnPreference, type: :model do
         expect(preferences.all?(&:new_record?)).to be true
         expect(preferences.map(&:column_name)).to eq [:col1, :col2, :col3]
         expect(preferences.map(&:visible)).to eq [false, true, false]
+      end
+    end
+  end
+
+  describe "filtering default_preferences" do
+    let(:name_preference) { double(:name_preference) }
+    let(:schedules_preference) { double(:scheudles_preference) }
+    let(:default_preferences) { { name: name_preference, schedules: schedules_preference } }
+    context "when the action is order_cycles_index" do
+      let(:action_name) { "order_cycles_index" }
+
+      context "and the user owns a subscriptions-enabled enterprise" do
+        let!(:enterprise) { create(:distributor_enterprise, enable_subscriptions: true) }
+
+        it "removes the schedules column from the defaults" do
+          ColumnPreference.filter(default_preferences, enterprise.owner, action_name)
+          expect(default_preferences[:schedules]).to eq schedules_preference
+        end
+      end
+
+      context "and the user does not own a subscriptions-enabled enterprise" do
+        let!(:enterprise) { create(:distributor_enterprise, enable_subscriptions: false) }
+
+        it "removes the schedules column from the defaults" do
+          ColumnPreference.filter(default_preferences, enterprise.owner, action_name)
+          expect(default_preferences[:schedules]).to be nil
+        end
       end
     end
   end

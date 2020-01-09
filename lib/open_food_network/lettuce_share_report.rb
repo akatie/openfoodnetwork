@@ -19,7 +19,9 @@ module OpenFoodNetwork
     end
 
     def table
-      variants.select { |v| v.in_stock? }
+      return [] unless @render_table
+
+      variants.select(&:in_stock?)
         .map do |variant|
         [
           variant.product.name,
@@ -35,7 +37,6 @@ module OpenFoodNetwork
         ]
       end
     end
-
 
     private
 
@@ -74,6 +75,5 @@ module OpenFoodNetwork
         "#{p[:name]} - #{p[:value]}"
       end.join(', ')
     end
-
   end
 end

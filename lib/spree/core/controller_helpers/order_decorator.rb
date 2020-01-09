@@ -1,3 +1,5 @@
+require 'open_food_network/scope_variant_to_hub'
+
 Spree::Core::ControllerHelpers::Order.class_eval do
   def current_order_with_scoped_variants(create_order_if_necessary = false)
     order = current_order_without_scoped_variants(create_order_if_necessary)
@@ -13,8 +15,7 @@ Spree::Core::ControllerHelpers::Order.class_eval do
   end
   alias_method_chain :current_order, :scoped_variants
 
-
-  # Override definition in spree/auth/app/controllers/spree/base_controller_decorator.rb
+  # Override definition in Spree::Core::ControllerHelpers::Order
   # Do not attempt to merge incomplete and current orders. Instead, destroy the incomplete orders.
   def set_current_order
     if user = try_spree_current_user

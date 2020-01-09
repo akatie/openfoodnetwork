@@ -80,7 +80,7 @@ describe 'Cart service', ->
     data = {variants: {}}
 
     it "sets update_running during the update, and clears it on success", ->
-      $httpBackend.expectPOST("/orders/populate", data).respond 200, {}
+      $httpBackend.expectPOST("/cart/populate", data).respond 200, {}
       expect(Cart.update_running).toBe(false)
       Cart.update()
       expect(Cart.update_running).toBe(true)
@@ -88,7 +88,7 @@ describe 'Cart service', ->
       expect(Cart.update_running).toBe(false)
 
     it "sets update_running during the update, and clears it on failure", ->
-      $httpBackend.expectPOST("/orders/populate", data).respond 404, {}
+      $httpBackend.expectPOST("/cart/populate", data).respond 404, {}
       expect(Cart.update_running).toBe(false)
       Cart.update()
       expect(Cart.update_running).toBe(true)
@@ -97,7 +97,7 @@ describe 'Cart service', ->
 
     it "marks the form as saved on success", ->
       spyOn(Cart, 'saved')
-      $httpBackend.expectPOST("/orders/populate", data).respond 200, {}
+      $httpBackend.expectPOST("/cart/populate", data).respond 200, {}
       Cart.update()
       $httpBackend.flush()
       expect(Cart.saved).toHaveBeenCalled()
@@ -106,7 +106,7 @@ describe 'Cart service', ->
       Cart.update_enqueued = true
       spyOn(Cart, 'saved')
       spyOn(Cart, 'popQueue')
-      $httpBackend.expectPOST("/orders/populate", data).respond 200, {}
+      $httpBackend.expectPOST("/cart/populate", data).respond 200, {}
       Cart.update()
       $httpBackend.flush()
       expect(Cart.popQueue).toHaveBeenCalled()
@@ -115,14 +115,14 @@ describe 'Cart service', ->
       Cart.update_enqueued = false
       spyOn(Cart, 'saved')
       spyOn(Cart, 'popQueue')
-      $httpBackend.expectPOST("/orders/populate", data).respond 200, {}
+      $httpBackend.expectPOST("/cart/populate", data).respond 200, {}
       Cart.update()
       $httpBackend.flush()
       expect(Cart.popQueue).not.toHaveBeenCalled()
 
     it "retries the update on failure", ->
       spyOn(Cart, 'scheduleRetry')
-      $httpBackend.expectPOST("/orders/populate", data).respond 404, {}
+      $httpBackend.expectPOST("/cart/populate", data).respond 404, {}
       Cart.update()
       $httpBackend.flush()
       expect(Cart.scheduleRetry).toHaveBeenCalled()
@@ -145,11 +145,11 @@ describe 'Cart service', ->
         expect(li.max_quantity).toEqual 0
 
       it "resets the count on hand available", ->
-        li = {variant: {id: 1, count_on_hand: 10}, quantity: 5}
+        li = {variant: {id: 1, on_hand: 10}, quantity: 5}
         Cart.line_items = [li]
         stockLevels = {1: {quantity: 0, max_quantity: 0, on_hand: 0}}
         Cart.compareAndNotifyStockLevels stockLevels
-        expect(li.variant.count_on_hand).toEqual 0
+        expect(li.variant.on_hand).toEqual 0
 
     describe "when the quantity available is less than that requested", ->
       it "reduces the quantity in the cart", ->
@@ -172,7 +172,7 @@ describe 'Cart service', ->
         Cart.line_items = [li]
         stockLevels = {1: {quantity: 5, on_hand: 6}}
         Cart.compareAndNotifyStockLevels stockLevels
-        expect(li.variant.count_on_hand).toEqual 6
+        expect(li.variant.on_hand).toEqual 6
 
     describe "when the client-side quantity has been increased during the request", ->
       it "does not reset the quantity", ->

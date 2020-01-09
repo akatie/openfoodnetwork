@@ -2,10 +2,12 @@ require 'open_food_network/user_balance_calculator'
 
 module OpenFoodNetwork
   class OrderCycleManagementReport
+    DEFAULT_DATE_INTERVAL = { from: -1.month, to: 1.day }.freeze
     attr_reader :params
-    def initialize(user, params = {})
-      @params = params
+    def initialize(user, params = {}, render_table = false)
+      @params = sanitize_params(params)
       @user = user
+      @render_table = render_table
     end
 
     def header
@@ -50,6 +52,8 @@ module OpenFoodNetwork
     end
 
     def table_items
+      return [] unless @render_table
+
       if is_payment_methods?
         orders.map { |o| payment_method_row o }
       else
@@ -74,8 +78,7 @@ module OpenFoodNetwork
        order.shipping_method.andand.name,
        order.payments.first.andand.payment_method.andand.name,
        order.payments.first.amount,
-       OpenFoodNetwork::UserBalanceCalculator.new(order.email, order.distributor).balance
-      ]
+       OpenFoodNetwork::UserBalanceCalculator.new(order.email, order.distributor).balance]
     end
 
     def delivery_row(order)
@@ -92,13 +95,12 @@ module OpenFoodNetwork
        order.payments.first.amount,
        OpenFoodNetwork::UserBalanceCalculator.new(order.email, order.distributor).balance,
        has_temperature_controlled_items?(order),
-       order.special_instructions
-      ]
+       order.special_instructions]
     end
 
     def filter_to_payment_method(orders)
       if params[:payment_method_in].present?
-        orders.joins(payments: :payment_method).where(spree_payments: { payment_method_id: params[:payment_method_in]})
+        orders.joins(payments: :payment_method).where(spree_payments: { payment_method_id: params[:payment_method_in] })
       else
         orders
       end
@@ -106,7 +108,7 @@ module OpenFoodNetwork
 
     def filter_to_shipping_method(orders)
       if params[:shipping_method_in].present?
-        orders.joins(:shipping_method).where(shipping_method_id: params[:shipping_method_in])
+        orders.joins(shipments: :shipping_rates).where(spree_shipping_rates: { shipping_method_id: params[:shipping_method_in] })
       else
         orders
       end
@@ -131,6 +133,13 @@ module OpenFoodNetwork
     def customer_code(email)
       customer = Customer.where(email: email).first
       customer.nil? ? "" : customer.code
+    end
+
+    def sanitize_params(params)
+      params[:q] ||= {}
+      params[:q][:completed_at_gt] ||= Time.zone.today + DEFAULT_DATE_INTERVAL[:from]
+      params[:q][:completed_at_lt] ||= Time.zone.today + DEFAULT_DATE_INTERVAL[:to]
+      params
     end
   end
 end

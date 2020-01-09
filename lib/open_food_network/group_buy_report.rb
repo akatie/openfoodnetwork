@@ -1,5 +1,4 @@
 module OpenFoodNetwork
-
   GroupBuyVariantRow = Struct.new(:variant, :sum_quantities, :sum_max_quantities) do
     def to_row
       [variant.product.supplier.name, variant.product.name, I18n.t('admin.reports.unitsize'), variant.options_text, variant.weight, sum_quantities, sum_max_quantities]
@@ -13,7 +12,7 @@ module OpenFoodNetwork
   end
 
   class GroupBuyReport
-    def initialize orders
+    def initialize(orders)
       @orders = orders
     end
 
@@ -31,16 +30,15 @@ module OpenFoodNetwork
 
     def variants_and_quantities
       variants_and_quantities = []
-      line_items = @orders.map { |o| o.line_items }.flatten
+      line_items = @orders.map(&:line_items).flatten
       supplier_groups = line_items.group_by { |li| li.variant.product.supplier }
-      supplier_groups.each do |supplier, line_items_by_supplier|
+      supplier_groups.each do |_supplier, line_items_by_supplier|
         product_groups = line_items_by_supplier.group_by { |li| li.variant.product }
         product_groups.each do |product, line_items_by_product|
-
           # Cycle thorugh variant of a product
-          variant_groups = line_items_by_product.group_by { |li| li.variant }
+          variant_groups = line_items_by_product.group_by(&:variant)
           variant_groups.each do |variant, line_items_by_variant|
-            sum_quantities = line_items_by_variant.sum { |li| li.quantity }
+            sum_quantities = line_items_by_variant.sum(&:quantity)
             sum_max_quantities = line_items_by_variant.sum { |li| li.max_quantity || 0 }
             variants_and_quantities << GroupBuyVariantRow.new(variant, sum_quantities, sum_max_quantities)
           end

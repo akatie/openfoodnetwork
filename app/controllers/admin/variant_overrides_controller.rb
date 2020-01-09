@@ -3,14 +3,13 @@ require 'open_food_network/spree_api_key_loader'
 module Admin
   class VariantOverridesController < ResourceController
     include OpenFoodNetwork::SpreeApiKeyLoader
+    include EnterprisesHelper
 
     prepend_before_filter :load_data
     before_filter :load_collection, only: [:bulk_update]
     before_filter :load_spree_api_key, only: :index
 
-
-    def index
-    end
+    def index; end
 
     def bulk_update
       # Ensure we're authorised to update all variant overrides
@@ -21,9 +20,9 @@ module Admin
         render json: @vo_set.collection, each_serializer: Api::Admin::VariantOverrideSerializer
       else
         if @vo_set.errors.present?
-          render json: { errors: @vo_set.errors }, status: 400
+          render json: { errors: @vo_set.errors }, status: :bad_request
         else
-          render nothing: true, status: 500
+          render nothing: true, status: :internal_server_error
         end
       end
     end
@@ -34,12 +33,11 @@ module Admin
       @collection.each(&:reset_stock!)
 
       if collection_errors.present?
-        render json: { errors: collection_errors }, status: 400
+        render json: { errors: collection_errors }, status: :bad_request
       else
         render json: @collection, each_serializer: Api::Admin::VariantOverrideSerializer
       end
     end
-
 
     private
 
@@ -55,6 +53,18 @@ module Admin
         variant_override_enterprises_per_hub
 
       @inventory_items = InventoryItem.where(enterprise_id: @hubs)
+      @import_dates = inventory_import_dates.uniq.to_json
+    end
+
+    def inventory_import_dates
+      import_dates = VariantOverride.
+        distinct_import_dates.
+        for_hubs(editable_enterprises.collect(&:id))
+
+      options = [{ id: '0', name: 'All' }]
+      import_dates.collect(&:import_date).map { |i| options.push(id: i.to_date, name: i.to_date.to_formatted_s(:long)) }
+
+      options
     end
 
     def load_collection
@@ -63,7 +73,8 @@ module Admin
     end
 
     def collection
-      @variant_overrides = VariantOverride.for_hubs(params[:hub_id] || @hubs)
+      @variant_overrides = VariantOverride.includes(:variant).for_hubs(params[:hub_id] || @hubs)
+      @variant_overrides.select { |vo| vo.variant.present? }
     end
 
     def collection_actions

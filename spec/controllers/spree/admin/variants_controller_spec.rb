@@ -2,7 +2,7 @@ require 'spec_helper'
 
 module Spree
   module Admin
-    describe VariantsController do
+    describe VariantsController, type: :controller do
       before { login_as_admin }
 
       describe "search action" do
@@ -16,23 +16,91 @@ module Spree
 
         it "filters by distributor" do
           spree_get :search, q: 'Prod', distributor_id: d.id.to_s
-          assigns(:variants).should == [v1]
+          expect(assigns(:variants)).to eq([v1])
         end
 
         it "applies variant overrides" do
           spree_get :search, q: 'Prod', distributor_id: d.id.to_s
-          assigns(:variants).should == [v1]
-          assigns(:variants).first.count_on_hand.should == 44
+          expect(assigns(:variants)).to eq([v1])
+          expect(assigns(:variants).first.on_hand).to eq(44)
         end
 
         it "filters by order cycle" do
           spree_get :search, q: 'Prod', order_cycle_id: oc.id.to_s
-          assigns(:variants).should == [v1]
+          expect(assigns(:variants)).to eq([v1])
         end
 
         it "does not filter when no distributor or order cycle is specified" do
           spree_get :search, q: 'Prod'
-          assigns(:variants).should match_array [v1, v2]
+          expect(assigns(:variants)).to match_array [v1, v2]
+        end
+      end
+
+      describe '#destroy' do
+        let(:variant) { create(:variant) }
+
+        context 'when requesting with js' do
+          before do
+            allow(Spree::Variant).to receive(:find).with(variant.id.to_s) { variant }
+            allow(variant).to receive(:destroy).and_call_original
+          end
+
+          it 'destroys the variant' do
+            spree_delete :destroy, id: variant.id, product_id: variant.product.permalink, format: 'js'
+            expect(variant).to have_received(:destroy)
+          end
+
+          it 'shows a success flash message' do
+            spree_delete :destroy, id: variant.id, product_id: variant.product.permalink, format: 'js'
+            expect(flash[:success]).to be
+          end
+
+          it 'renders spree/admin/shared/destroy' do
+            spree_delete :destroy, id: variant.id, product_id: variant.product.permalink, format: 'js'
+            expect(response).to render_template('spree/admin/shared/_destroy')
+          end
+
+          it 'destroys all its exchanges' do
+            exchange = create(:exchange)
+            variant.exchanges << exchange
+
+            spree_delete :destroy, id: variant.id, product_id: variant.product.permalink, format: 'js'
+            expect(variant.exchanges).to be_empty
+          end
+        end
+
+        context 'when requesting with html' do
+          before do
+            allow(Spree::Variant).to receive(:find).with(variant.id.to_s) { variant }
+            allow(variant).to receive(:destroy).and_call_original
+          end
+
+          it 'deletes the variant' do
+            spree_delete :destroy, id: variant.id, product_id: variant.product.permalink, format: 'html'
+            expect(variant).to have_received(:destroy)
+          end
+
+          it 'shows a success flash message' do
+            spree_delete :destroy, id: variant.id, product_id: variant.product.permalink, format: 'html'
+            expect(flash[:success]).to be
+          end
+
+          it 'redirects to admin_product_variants_url' do
+            spree_delete :destroy, id: variant.id, product_id: variant.product.permalink, format: 'html'
+            expect(response).to redirect_to(
+              controller: 'spree/admin/variants',
+              action: :index,
+              product_id: variant.product.permalink
+            )
+          end
+
+          it 'destroys all its exchanges' do
+            exchange = create(:exchange)
+            variant.exchanges << exchange
+
+            spree_delete :destroy, id: variant.id, product_id: variant.product.permalink, format: 'js'
+            expect(variant.exchanges).to be_empty
+          end
         end
       end
     end

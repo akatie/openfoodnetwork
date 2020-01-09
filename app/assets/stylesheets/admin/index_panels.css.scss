@@ -1,3 +1,5 @@
+@import "variables";
+
 tbody.panel-ctrl {
   td.panel-toggle{
     -webkit-touch-callout: none;
@@ -12,6 +14,7 @@ tbody.panel-ctrl {
     i.icon-chevron::before {
       font-size: 1.2rem;
       content: "\f078";
+      padding: 0;
     }
 
     &.error::before {
@@ -26,7 +29,7 @@ tbody.panel-ctrl {
       font-size: 2rem;
       -webkit-font-smoothing: antialiased;
       content: "\f071";
-      color: #da5354;
+      color: $warning-red;
     }
 
     &.status {
@@ -37,7 +40,7 @@ tbody.panel-ctrl {
 
       i.issue::before {
         content: "\f071";
-        color: #da5354;
+        color: $warning-red;
       }
 
       i.warning::before {
@@ -47,7 +50,7 @@ tbody.panel-ctrl {
 
       i.ok::before {
         content: "\f058";
-        color: #9fc820;
+        color: $spree-green;
       }
     }
 
@@ -98,7 +101,7 @@ tbody.panel-ctrl {
 
   tr.panel-row {
     &:hover {
-      td {
+      >td {
         background-color: #ffffff;
       }
     }
@@ -107,6 +110,12 @@ tbody.panel-ctrl {
       border-color: #6788a2;
       padding: 0;
       .panel {
+        .actions {
+          .button {
+            display: inline-block;
+          }
+        }
+
         .row{
           margin: 0px -4px;
 

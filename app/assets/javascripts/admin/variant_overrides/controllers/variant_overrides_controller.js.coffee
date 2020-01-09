@@ -1,4 +1,4 @@
-angular.module("admin.variantOverrides").controller "AdminVariantOverridesCtrl", ($scope, $http, $timeout, Indexer, Columns, Views, SpreeApiAuth, PagedFetcher, StatusMessage, RequestMonitor, hubs, producers, hubPermissions, InventoryItems, VariantOverrides, DirtyVariantOverrides) ->
+angular.module("admin.variantOverrides").controller "AdminVariantOverridesCtrl", ($scope, $http, $timeout, Indexer, Columns, Views, PagedFetcher, StatusMessage, RequestMonitor, hubs, producers, hubPermissions, InventoryItems, VariantOverrides, DirtyVariantOverrides) ->
   $scope.hubs = Indexer.index hubs
   $scope.hub_id = if hubs.length == 1 then hubs[0].id else null
   $scope.products = []
@@ -13,6 +13,11 @@ angular.module("admin.variantOverrides").controller "AdminVariantOverridesCtrl",
   $scope.RequestMonitor = RequestMonitor
   $scope.selectView = Views.selectView
   $scope.currentView = -> Views.currentView
+  $scope.onDemandOptions = [
+    { description: t('js.variant_overrides.on_demand.use_producer_settings'), value: null },
+    { description: t('js.variant_overrides.on_demand.yes'), value: true },
+    { description: t('js.variant_overrides.on_demand.no'), value: false }
+  ]
 
   $scope.views = Views.setViews
     inventory:    { name: t('js.variant_overrides.inventory_products'), visible: true }
@@ -25,6 +30,7 @@ angular.module("admin.variantOverrides").controller "AdminVariantOverridesCtrl",
 
   $scope.resetSelectFilters = ->
     $scope.producerFilter = 0
+    $scope.importDateFilter = '0'
     $scope.query = ''
 
   $scope.resetSelectFilters()
@@ -33,13 +39,7 @@ angular.module("admin.variantOverrides").controller "AdminVariantOverridesCtrl",
     $scope.producerFilter != 0 || $scope.query != ''
 
   $scope.initialise = ->
-    SpreeApiAuth.authorise()
-    .then ->
-      $scope.spree_api_key_ok = true
-      $scope.fetchProducts()
-    .catch (message) ->
-      $scope.api_error_msg = message
-
+    $scope.fetchProducts()
 
   $scope.fetchProducts = ->
     url = "/api/products/overridable?page=::page::;per_page=100"
@@ -104,3 +104,35 @@ angular.module("admin.variantOverrides").controller "AdminVariantOverridesCtrl",
         StatusMessage.display 'success', t('js.variant_overrides.stock_reset')
       .error (data, status) ->
         $timeout -> StatusMessage.display 'failure', $scope.updateError(data, status)
+
+  # Variant override count_on_hand field placeholder logic:
+  #     on_demand true  -- Show "On Demand"
+  #     on_demand false -- Show empty value to be set by the user
+  #     on_demand nil   -- Show producer on_hand value
+  $scope.countOnHandPlaceholder = (variant, hubId) ->
+    variantOverride = $scope.variantOverrides[hubId][variant.id]
+
+    if variantOverride.on_demand
+      t('js.variants.on_demand.yes')
+    else if variantOverride.on_demand == false
+      ''
+    else
+      variant.on_hand
+
+  # This method should only be used when the variant override on_demand is changed.
+  #
+  # Change the count_on_hand value to a suggested value.
+  $scope.updateCountOnHand = (variant, hubId) ->
+    variantOverride = $scope.variantOverrides[hubId][variant.id]
+
+    suggested = $scope.countOnHandSuggestion(variant, hubId)
+    return if suggested == variantOverride.count_on_hand
+    variantOverride.count_on_hand = suggested
+    DirtyVariantOverrides.set hubId, variant.id, variantOverride.id, 'count_on_hand', suggested
+
+  # Suggest producer count_on_hand if variant has limited stock and variant override forces limited
+  # stock. Otherwise, clear whatever value is set.
+  $scope.countOnHandSuggestion = (variant, hubId) ->
+    variantOverride = $scope.variantOverrides[hubId][variant.id]
+    return null unless !variant.on_demand && variantOverride.on_demand == false
+    variant.on_hand

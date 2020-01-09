@@ -3,8 +3,7 @@ require 'open_food_network/spree_api_key_loader'
 Spree::Admin::OrdersController.class_eval do
   include OpenFoodNetwork::SpreeApiKeyLoader
   helper CheckoutHelper
-  before_filter :load_spree_api_key, :only => :bulk_management
-  before_filter :load_order, only: %i[show edit update fire resend invoice print]
+  before_filter :load_order, only: %i[show edit update fire resend invoice print print_ticket]
 
   before_filter :load_distribution_choices, only: [:new, :edit, :update]
 
@@ -16,53 +15,46 @@ Spree::Admin::OrdersController.class_eval do
   # fees! This is a quick fix for that.
   # TODO: update fees when adding/removing line items
   # instead of the update_distribution_charge method.
-  after_filter :update_distribution_charge, :only => :update
+  after_filter :update_distribution_charge, only: :update
 
   before_filter :require_distributor_abn, only: :invoice
 
-
   respond_to :html, :json
 
-  # Mostly the original Spree method, tweaked to allow us to ransack with completed_at in a sane way
   def index
-    params[:q] ||= {}
-    params[:q][:completed_at_not_null] ||= '1' if Spree::Config[:show_only_complete_orders_by_default]
-    @show_only_completed = params[:q][:completed_at_not_null].present?
-    params[:q][:s] ||= @show_only_completed ? 'completed_at desc' : 'created_at desc'
+    # Overriding the action so we only render the page template. An angular request
+    # within the page then fetches the data it needs from Api::OrdersController
+  end
 
-    # As date params are deleted if @show_only_completed, store
-    # the original date so we can restore them into the params
-    # after the search
-    created_at_gt = params[:q][:created_at_gt]
-    created_at_lt = params[:q][:created_at_lt]
+  def bulk_management
+    load_spree_api_key
+  end
 
-    params[:q].delete(:inventory_units_shipment_id_null) if params[:q][:inventory_units_shipment_id_null] == "0"
+  def edit
+    @order.shipments.map &:refresh_rates
 
-    if !params[:q][:created_at_gt].blank?
-      params[:q][:created_at_gt] = Time.zone.parse(params[:q][:created_at_gt]).beginning_of_day rescue ""
+    AdvanceOrderService.new(@order).call
+
+    # The payment step shows an error of 'No pending payments'
+    # Clearing the errors from the order object will stop this error
+    # appearing on the edit page where we don't want it to.
+    @order.errors.clear
+  end
+
+  # Re-implement spree method so that it redirects to edit instead of rendering edit
+  #   This allows page reloads while adding variants to the order (/edit), without being redirected to customer details page (/update)
+  def update
+    unless @order.update_attributes(params[:order]) && @order.line_items.present?
+      @order.errors.add(:line_items, Spree.t('errors.messages.blank')) if @order.line_items.empty?
+      return redirect_to edit_admin_order_path(@order), flash: { error: @order.errors.full_messages.join(', ') }
     end
 
-    if !params[:q][:created_at_lt].blank?
-      params[:q][:created_at_lt] = Time.zone.parse(params[:q][:created_at_lt]).end_of_day rescue ""
-    end
-
-    # Changed this to stop completed_at being overriden when present
-    if @show_only_completed
-      params[:q][:completed_at_gt] = params[:q].delete(:created_at_gt) unless params[:q][:completed_at_gt]
-      params[:q][:completed_at_lt] = params[:q].delete(:created_at_lt) unless params[:q][:completed_at_gt]
-    end
-
-    @orders = orders
-
-    # Restore dates
-    params[:q][:created_at_gt] = created_at_gt
-    params[:q][:created_at_lt] = created_at_lt
-
-    respond_with(@orders) do |format|
-      format.html
-      format.json do
-        render_as_json @orders
-      end
+    @order.update!
+    if @order.complete?
+      redirect_to edit_admin_order_path(@order)
+    else
+      # Jump to next step if order is not complete
+      redirect_to admin_order_customer_path(@order)
     end
   end
 
@@ -76,8 +68,8 @@ Spree::Admin::OrdersController.class_eval do
   end
 
   def invoice
-    template = if Spree::Config.invoice_style2? then "spree/admin/orders/invoice2" else "spree/admin/orders/invoice" end
-    pdf = render_to_string pdf: "invoice-#{@order.number}.pdf", template: template, formats: [:html], encoding: "UTF-8"
+    pdf = InvoiceRenderer.new.render_to_string(@order)
+
     Spree::OrderMailer.invoice_email(@order.id, pdf).deliver
     flash[:success] = t('admin.orders.invoice_email_sent')
 
@@ -85,8 +77,7 @@ Spree::Admin::OrdersController.class_eval do
   end
 
   def print
-    template = if Spree::Config.invoice_style2? then "spree/admin/orders/invoice2" else "spree/admin/orders/invoice" end
-    render pdf: "invoice-#{@order.number}", template: template, encoding: "UTF-8"
+    render InvoiceRenderer.new.args(@order)
   end
 
   def print_ticket
@@ -99,23 +90,8 @@ Spree::Admin::OrdersController.class_eval do
 
   private
 
-  def orders
-    if json_request?
-      @search = OpenFoodNetwork::Permissions.new(spree_current_user).editable_orders.ransack(params[:q])
-      @search.result.reorder('id ASC')
-    else
-      @search = Spree::Order.accessible_by(current_ability, :index).ransack(params[:q])
-
-      # Replaced this search to filter orders to only show those distributed by current user (or all for admin user)
-      @search.result.includes([:user, :shipments, :payments]).
-        distributed_by_user(spree_current_user).
-        page(params[:page]).
-        per(params[:per_page] || Spree::Config[:orders_per_page])
-    end
-  end
-
   def require_distributor_abn
-    unless @order.distributor.abn.present?
+    if @order.distributor.abn.blank?
       flash[:error] = t(:must_have_valid_business_number, enterprise_name: @order.distributor.name)
       respond_with(@order) { |format| format.html { redirect_to edit_admin_order_path(@order) } }
     end
@@ -141,5 +117,4 @@ Spree::Admin::OrdersController.class_eval do
       render 'set_distribution', locals: { order: @order }
     end
   end
-
 end

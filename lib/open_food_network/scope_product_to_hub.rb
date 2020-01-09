@@ -8,11 +8,10 @@ module OpenFoodNetwork
     end
 
     def scope(product)
-      product.send :extend, OpenFoodNetwork::ScopeProductToHub::ScopeProductToHub
+      product.extend(OpenFoodNetwork::ScopeProductToHub::ScopeProductToHub)
       product.instance_variable_set :@hub, @hub
       product.instance_variable_set :@variant_overrides, @variant_overrides
     end
-
 
     module ScopeProductToHub
       def variants_distributed_by(order_cycle, distributor)

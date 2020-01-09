@@ -21,120 +21,6 @@ describe Admin::StripeAccountsController, type: :controller do
     end
   end
 
-  context "#connect_callback" do
-    let(:params) { { id: enterprise.permalink } }
-    let(:connector) { double(:connector) }
-
-    before do
-      allow(controller).to receive(:spree_current_user) { enterprise.owner }
-      allow(Stripe::AccountConnector).to receive(:new) { connector }
-    end
-
-    context "when the connector.create_account raises a StripeError" do
-      before do
-        allow(connector).to receive(:create_account).and_raise Stripe::StripeError, "some error"
-      end
-
-      it "returns a 500 error" do
-        spree_get :connect_callback, params
-        expect(response.status).to be 500
-      end
-    end
-
-    context "when the connector.create_account raises an AccessDenied error" do
-      before do
-        allow(connector).to receive(:create_account).and_raise CanCan::AccessDenied, "some error"
-      end
-
-      it "redirects to unauthorized" do
-        spree_get :connect_callback, params
-        expect(response).to redirect_to spree.unauthorized_path
-      end
-    end
-
-    context "when the connector fails in creating a new stripe account record" do
-      before { allow(connector).to receive(:create_account) { false } }
-
-      context "when the user cancelled the connection" do
-        before { allow(connector).to receive(:connection_cancelled_by_user?) { true } }
-
-        it "renders a failure message" do
-          allow(connector).to receive(:enterprise) { enterprise }
-          spree_get :connect_callback, params
-          expect(flash[:notice]).to eq I18n.t('admin.controllers.enterprises.stripe_connect_cancelled')
-          expect(response).to redirect_to edit_admin_enterprise_path(enterprise, anchor: 'payment_methods')
-        end
-      end
-
-      context "when some other error caused the failure" do
-        before { allow(connector).to receive(:connection_cancelled_by_user?) { false } }
-
-        it "renders a failure message" do
-          allow(connector).to receive(:enterprise) { enterprise }
-          spree_get :connect_callback, params
-          expect(flash[:error]).to eq I18n.t('admin.controllers.enterprises.stripe_connect_fail')
-          expect(response).to redirect_to edit_admin_enterprise_path(enterprise, anchor: 'payment_methods')
-        end
-      end
-    end
-
-    context "when the connector succeeds in creating a new stripe account record" do
-      before { allow(connector).to receive(:create_account) { true } }
-
-      it "redirects to the enterprise edit path" do
-        allow(connector).to receive(:enterprise) { enterprise }
-        spree_get :connect_callback, params
-        expect(flash[:success]).to eq I18n.t('admin.controllers.enterprises.stripe_connect_success')
-        expect(response).to redirect_to edit_admin_enterprise_path(enterprise, anchor: 'payment_methods')
-      end
-    end
-  end
-
-  describe "#deauthorize" do
-    let!(:stripe_account) { create(:stripe_account, stripe_user_id: "webhook_id") }
-    let(:params) do
-      {
-        "format" => "json",
-        "id" => "evt_123",
-        "object" => "event",
-        "data" => { "object" => { "id" => "ca_9B" } },
-        "type" => "account.application.deauthorized",
-        "account" => "webhook_id"
-      }
-    end
-
-    it "deletes Stripe accounts in response to a webhook" do
-      post 'deauthorize', params
-      expect(response.status).to eq 200
-      expect(response.body).to eq "Account webhook_id deauthorized"
-      expect(StripeAccount.all).not_to include stripe_account
-    end
-
-    context "when the stripe_account id on the event does not match any known accounts" do
-      before do
-        params["account"] = "webhook_id1"
-      end
-
-      it "does nothing" do
-        post 'deauthorize', params
-        expect(response.status).to eq 204
-        expect(StripeAccount.all).to include stripe_account
-      end
-    end
-
-    context "when the event is not a deauthorize event" do
-      before do
-        params["type"] = "account.application.authorized"
-      end
-
-      it "does nothing" do
-        post 'deauthorize', params
-        expect(response.status).to eq 204
-        expect(StripeAccount.all).to include stripe_account
-      end
-    end
-  end
-
   describe "#destroy" do
     let(:params) { { format: :json, id: "some_id" } }
 
@@ -191,55 +77,52 @@ describe Admin::StripeAccountsController, type: :controller do
   end
 
   describe "#status" do
-    let(:params) { { format: :json } }
+    let(:params) { { format: :json, enterprise_id: enterprise.id } }
 
     before do
       allow(Stripe).to receive(:api_key) { "sk_test_12345" }
       Spree::Config.set(stripe_connect_enabled: false)
     end
 
-    context "when Stripe is not enabled" do
-      it "returns with a status of 'stripe_disabled'" do
+    context "when I don't manage the specified enterprise" do
+      let(:user) { create(:user) }
+
+      before do
+        allow(controller).to receive(:spree_current_user) { user }
+      end
+
+      it "redirects to unauthorized" do
         spree_get :status, params
-        json_response = JSON.parse(response.body)
-        expect(json_response["status"]).to eq "stripe_disabled"
+        expect(response).to redirect_to spree.unauthorized_path
       end
     end
 
-    context "when Stripe is enabled" do
-      before { Spree::Config.set(stripe_connect_enabled: true) }
+    context "when I manage the specified enterprise" do
+      before do
+        allow(controller).to receive(:spree_current_user) { enterprise.owner }
+      end
 
-      context "but no stripe account is associated with the specified enterprise" do
-        it "returns with a status of 'account_missing'" do
+      context "when Stripe is not enabled" do
+        it "returns with a status of 'stripe_disabled'" do
           spree_get :status, params
           json_response = JSON.parse(response.body)
-          expect(json_response["status"]).to eq "account_missing"
+          expect(json_response["status"]).to eq "stripe_disabled"
         end
       end
 
-      context "and a stripe account is associated with the specified enterprise" do
-        let!(:account) { create(:stripe_account, stripe_user_id: "acc_123", enterprise: enterprise) }
+      context "when Stripe is enabled" do
+        before { Spree::Config.set(stripe_connect_enabled: true) }
 
-        context "but I don't manage the enterprise" do
-          let(:user) { create(:user) }
-          let(:enterprise2) { create(:enterprise) }
-          before do
-            user.owned_enterprises << enterprise2
-            params[:enterprise_id] = enterprise.id
-            allow(controller).to receive(:spree_current_user) { user }
-          end
-
-          it "redirects to unauthorized" do
+        context "when no stripe account is associated with the specified enterprise" do
+          it "returns with a status of 'account_missing'" do
             spree_get :status, params
-            expect(response).to redirect_to spree.unauthorized_path
+            json_response = JSON.parse(response.body)
+            expect(json_response["status"]).to eq "account_missing"
           end
         end
 
-        context "and I manage the enterprise" do
-          before do
-            params[:enterprise_id] = enterprise.id
-            allow(controller).to receive(:spree_current_user) { enterprise.owner }
-          end
+        context "when a stripe account is associated with the specified enterprise" do
+          let!(:account) { create(:stripe_account, stripe_user_id: "acc_123", enterprise: enterprise) }
 
           context "but access has been revoked or does not exist on stripe's servers" do
             before do

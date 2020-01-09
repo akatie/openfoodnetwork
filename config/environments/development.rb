@@ -5,7 +5,9 @@ Openfoodnetwork::Application.configure do
   # every request.  This slows down response time but is perfect for development
   # since you don't have to restart the web server when you make code changes.
   config.cache_classes = false
-  config.cache_store = :memory_store
+
+  # :file_store is used by default when no cache store is specifically configured.
+  # config.cache_store = :file_store
 
   # Log error messages when you accidentally call methods on nil.
   config.whiny_nils = true
@@ -29,12 +31,17 @@ Openfoodnetwork::Application.configure do
   # Expands the lines which load the assets
   config.assets.debug = false
 
+  # Set Time.zone default to the specified zone and make Active Record auto-convert to this zone.
+  # Run "rake -D time" for a list of tasks for finding time zone names. Default is UTC.
+  #
+  # To override this, set the appropriate locale in application.yml
+  config.time_zone = ENV.fetch("TIMEZONE", "UTC")
+
+  config.i18n.fallbacks = [:en]
+
   # Show emails using Letter Opener
   config.action_mailer.delivery_method = :letter_opener
   config.action_mailer.default_url_options = { host: "0.0.0.0:3000" }
+
+  config.log_level = :debug
 end
-
-
-# Load heroku vars from local file
-heroku_env = File.join(Rails.root, 'config', 'heroku_env.rb')
-load(heroku_env) if File.exists?(heroku_env)

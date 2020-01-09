@@ -8,11 +8,11 @@ module AuthenticationWorkflow
   def quick_login_as_admin
     admin_role = Spree::Role.find_or_create_by_name!('admin')
     admin_user = create(:user,
-      :password => 'passw0rd',
-      :password_confirmation => 'passw0rd',
-      :remember_me => false,
-      :persistence_token => 'pass',
-      :login => 'admin@ofn.org')
+                        password: 'passw0rd',
+                        password_confirmation: 'passw0rd',
+                        remember_me: false,
+                        persistence_token: 'pass',
+                        login: 'admin@ofn.org')
 
     admin_user.spree_roles << admin_role
     quick_login_as admin_user
@@ -20,16 +20,7 @@ module AuthenticationWorkflow
   end
 
   def login_to_admin_section
-    admin_role = Spree::Role.find_or_create_by_name!('admin')
-    admin_user = create(:user,
-      :password => 'passw0rd',
-      :password_confirmation => 'passw0rd',
-      :remember_me => false,
-      :persistence_token => 'pass',
-      :login => 'admin@ofn.org')
-
-    admin_user.spree_roles << admin_role
-    quick_login_as admin_user
+    quick_login_as_admin
     visit spree.admin_path
   end
 
@@ -41,34 +32,56 @@ module AuthenticationWorkflow
     new_user
   end
 
-  def login_to_admin_as user
+  def login_to_admin_as(user)
     quick_login_as user
     visit spree.admin_path
-    #visit spree.admin_path
-    #fill_in 'spree_user_email', :with => user.email
-    #fill_in 'spree_user_password', :with => user.password
-    #click_button 'Login'
+    # visit spree.admin_path
+    # fill_in 'spree_user_email', :with => user.email
+    # fill_in 'spree_user_password', :with => user.password
+    # click_button 'Login'
   end
 
   def login_to_consumer_section
     user_role = Spree::Role.find_or_create_by_name!('user')
-    user = create_enterprise_user({
-      :email => 'someone@ofn.org',
-      :password => 'passw0rd',
-      :password_confirmation => 'passw0rd',
-      :remember_me => false,
-      :persistence_token => 'pass',
-      :login => 'someone@ofn.org'})
+    user = create_enterprise_user(
+      email: 'someone@ofn.org',
+      password: 'passw0rd',
+      password_confirmation: 'passw0rd',
+      remember_me: false,
+      persistence_token: 'pass',
+      login: 'someone@ofn.org'
+    )
 
     user.spree_roles << user_role
 
     visit spree.login_path
-    fill_in 'email', :with => 'someone@ofn.org'
-    fill_in 'password', :with => 'passw0rd'
-    click_button 'Login'
+    fill_in_and_submit_login_form user
+  end
+
+  def fill_in_and_submit_login_form(user)
+    fill_in "email", with: user.email
+    fill_in "password", with: user.password
+    click_button "Login"
+  end
+
+  def use_api_as_unauthenticated_user
+    allow_any_instance_of(Api::BaseController).to receive(:spree_current_user) {
+      Spree::User.anonymous!
+    }
   end
 end
 
 RSpec.configure do |config|
-  config.extend AuthenticationWorkflow, :type => :feature
+  config.extend AuthenticationWorkflow, type: :feature
+
+  # rspec-rails 3 will no longer automatically infer an example group's spec type
+  # from the file location. You can explicitly opt-in to the feature using this
+  # config option.
+  # To explicitly tag specs without using automatic inference, set the `:type`
+  # metadata manually:
+  #
+  #     describe ThingsController, :type => :controller do
+  #       # Equivalent to being in spec/controllers
+  #     end
+  config.infer_spec_type_from_file_location!
 end

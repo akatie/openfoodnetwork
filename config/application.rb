@@ -1,6 +1,7 @@
 require_relative 'boot'
 
 require 'rails/all'
+require_relative "../lib/open_food_network/i18n_config"
 
 if defined?(Bundler)
   # If you precompile assets before deploying to production, use this line
@@ -47,7 +48,15 @@ module Openfoodnetwork
 
     # Register Spree calculators
     initializer 'spree.register.calculators' do |app|
-      app.config.spree.calculators.shipping_methods << OpenFoodNetwork::Calculator::Weight
+      app.config.spree.calculators.shipping_methods = [
+        Spree::Calculator::FlatPercentItemTotal,
+        Spree::Calculator::FlatRate,
+        Spree::Calculator::FlexiRate,
+        Spree::Calculator::PerItem,
+        Spree::Calculator::PriceSack,
+        Calculator::Weight
+      ]
+
       app.config.spree.calculators.add_class('enterprise_fees')
       config.spree.calculators.enterprise_fees = [
         Calculator::FlatPercentPerItem,
@@ -55,7 +64,7 @@ module Openfoodnetwork
         Spree::Calculator::FlexiRate,
         Spree::Calculator::PerItem,
         Spree::Calculator::PriceSack,
-        OpenFoodNetwork::Calculator::Weight
+        Calculator::Weight
       ]
       app.config.spree.calculators.add_class('payment_methods')
       config.spree.calculators.payment_methods = [
@@ -64,6 +73,17 @@ module Openfoodnetwork
         Spree::Calculator::FlexiRate,
         Spree::Calculator::PerItem,
         Spree::Calculator::PriceSack
+      ]
+    end
+
+    # Every splitter (except Base splitter) will split the order in multiple packages
+    #   Each package will generate a separate shipment in the order
+    #   Base splitter does not split the packages
+    #   So, because in OFN we have locked orders to have only one shipment,
+    #     we must use this splitter and no other
+    initializer "spree.register.stock_splitters" do |app|
+      app.config.spree.stock_splitters = [
+        Spree::Stock::Splitter::Base
       ]
     end
 
@@ -80,9 +100,17 @@ module Openfoodnetwork
 
     # Custom directories with classes and modules you want to be autoloadable.
     config.autoload_paths += %W(
+      #{config.root}/app/models/concerns
       #{config.root}/app/presenters
       #{config.root}/app/jobs
     )
+
+    config.paths["config/routes"] = %w(
+      config/routes/api.rb
+      config/routes.rb
+      config/routes/admin.rb
+      config/routes/spree.rb
+    ).map { |relative_path| Rails.root.join(relative_path) }
 
     # Only load the plugins named here, in the order given (default is alphabetical).
     # :all can be used as a placeholder for all plugins not explicitly named.
@@ -97,8 +125,8 @@ module Openfoodnetwork
 
     # The default locale is :en and all translations from config/locales/*.rb,yml are auto loaded.
     # config.i18n.load_path += Dir[Rails.root.join('my', 'locales', '*.{rb,yml}').to_s]
-    config.i18n.default_locale = ENV["LOCALE"] || ENV["I18N_LOCALE"] || "en"
-    config.i18n.available_locales = ENV["AVAILABLE_LOCALES"].andand.split(',').andand.map(&:strip) || [config.i18n.default_locale]
+    config.i18n.default_locale = OpenFoodNetwork::I18nConfig.default_locale
+    config.i18n.available_locales = OpenFoodNetwork::I18nConfig.available_locales
     I18n.locale = config.i18n.locale = config.i18n.default_locale
 
     # Setting this to true causes a performance regression in Rails 3.2.17
@@ -127,11 +155,11 @@ module Openfoodnetwork
     # Instead, they must be explicitly included below
     # http://stackoverflow.com/questions/8012434/what-is-the-purpose-of-config-assets-precompile
     config.assets.initialize_on_precompile = true
-    config.assets.precompile += ['store/all.css', 'store/all.js', 'store/shop_front.js', 'iehack.js']
+    config.assets.precompile += ['iehack.js']
     config.assets.precompile += ['admin/all.css', 'admin/*.js', 'admin/**/*.js']
-    config.assets.precompile += ['darkswarm/all.css', 'darkswarm/all_split2.css', 'darkswarm/all.js']
+    config.assets.precompile += ['web/all.css', 'web/all.js']
+    config.assets.precompile += ['darkswarm/all.css', 'darkswarm/all.js']
     config.assets.precompile += ['mail/all.css']
-    config.assets.precompile += ['search/all.css', 'search/*.js']
     config.assets.precompile += ['shared/*']
     config.assets.precompile += ['qz/*']
 

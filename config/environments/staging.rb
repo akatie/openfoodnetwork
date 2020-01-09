@@ -30,6 +30,9 @@ Openfoodnetwork::Application.configure do
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
   config.force_ssl = true
 
+  # Use https in email links
+  config.action_mailer.default_url_options = { protocol: 'https' }
+
   # See everything in the log (default is :info)
   # config.log_level = :debug
 
@@ -37,7 +40,9 @@ Openfoodnetwork::Application.configure do
   # config.logger = SyslogLogger.new
 
   # Use a different cache store in production
-  config.cache_store = :dalli_store
+  memcached_value_max_megabytes = ENV.fetch("MEMCACHED_VALUE_MAX_MEGABYTES", 1).to_i
+  memcached_value_max_bytes = memcached_value_max_megabytes * 1024 * 1024
+  config.cache_store = :dalli_store, { value_max_bytes: memcached_value_max_bytes }
 
   # Enable serving of images, stylesheets, and JavaScripts from an asset server
   # config.action_controller.asset_host = "http://assets.example.com"
@@ -56,7 +61,7 @@ Openfoodnetwork::Application.configure do
 
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
   # the I18n.default_locale when a translation can not be found)
-  config.i18n.fallbacks = true
+  config.i18n.fallbacks = [:en]
 
   # Send deprecation notices to registered listeners
   config.active_support.deprecation = :notify

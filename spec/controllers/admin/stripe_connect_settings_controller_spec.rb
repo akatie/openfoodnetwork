@@ -26,9 +26,9 @@ describe Admin::StripeConnectSettingsController, type: :controller do
           allow(Stripe).to receive(:api_key) { nil }
         end
 
-        it "sets the account status to :empty_api_key" do
+        it "sets the account status to :empty_api_key_error_html" do
           spree_get :edit
-          expect(assigns(:stripe_account)[:status]).to eq :empty_api_key
+          expect(assigns(:stripe_account)[:status]).to eq :empty_api_key_error_html
           expect(assigns(:settings).stripe_connect_enabled).to be true
         end
       end
@@ -41,12 +41,12 @@ describe Admin::StripeConnectSettingsController, type: :controller do
         context "and the request to retrieve Stripe account info fails" do
           before do
             stub_request(:get, "https://api.stripe.com/v1/account").
-              to_return(:status => 401, :body => "{\"error\": {\"message\": \"Invalid API Key provided: sk_test_****xxxx\"}}")
+              to_return(status: 401, body: "{\"error\": {\"message\": \"Invalid API Key provided: sk_test_****xxxx\"}}")
           end
 
-          it "sets the account status to :auth_fail" do
+          it "sets the account status to :auth_fail_error" do
             spree_get :edit
-            expect(assigns(:stripe_account)[:status]).to eq :auth_fail
+            expect(assigns(:stripe_account)[:status]).to eq :auth_fail_error
             expect(assigns(:settings).stripe_connect_enabled).to be true
           end
         end
@@ -54,7 +54,7 @@ describe Admin::StripeConnectSettingsController, type: :controller do
         context "and the request to retrieve Stripe account info succeeds" do
           before do
             stub_request(:get, "https://api.stripe.com/v1/account").
-              to_return(:status => 200, :body => "{ \"id\": \"acct_1234\", \"business_name\": \"OFN\" }")
+              to_return(status: 200, body: "{ \"id\": \"acct_1234\", \"business_name\": \"OFN\" }")
           end
 
           it "sets the account status to :ok, loads settings into Struct" do

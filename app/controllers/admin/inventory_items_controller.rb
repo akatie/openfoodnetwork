@@ -1,6 +1,5 @@
 module Admin
   class InventoryItemsController < ResourceController
-
     respond_to :json
 
     respond_override update: { json: {
@@ -19,7 +18,7 @@ module Admin
     # we can authorise #create using an object with required attributes
     def build_resource
       if parent_data.present?
-        parent.send(controller_name).build
+        parent.public_send(controller_name).build
       else
         model_class.new(params[object_name]) # This line changed
       end

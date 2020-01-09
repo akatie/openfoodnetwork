@@ -1,3 +1,10 @@
+@import "variables";
+
+input[type="submit"], input[type="button"], button, .button {
+  cursor: pointer;
+  font-size: 85%;
+}
+
 .text-center {
   text-align: center;
 }
@@ -16,7 +23,7 @@ table .blank-action {
 }
 
 text-angular .ta-editor {
-  border: 1px solid #cee1f4;
+  border: 1px solid $pale-blue;
   border-radius: 3px;
 }
 
@@ -29,7 +36,7 @@ text-angular .ta-editor {
 }
 
 span.error, div.error:not(.flash) {
-  color: #DA5354;
+  color: $warning-red;
 }
 
 /* Fix conflict between Spree and elRTE's styles */
@@ -38,15 +45,16 @@ span.error, div.error:not(.flash) {
   margin-bottom: 0;
 }
 
-input.red {
-	background-color: #DA5354;
+input.red, a.button.red, button.red {
+	background-color: $warning-red;
   margin-right: 5px;
+  color: #ffffff;
 }
 
 a.button.red {
   &:not(:hover) {
     color: #fff;
-    background-color: #DA5354;
+    background-color: $warning-red;
   }
 }
 
@@ -62,10 +70,17 @@ input.search {
   float: right;
 }
 
-.ng .ng-invalid.ng-dirty {
-  background-color: #fa787e;
+a {
+ cursor:pointer;
 }
 
+a.action--disabled {
+  cursor: default;
+
+  &:hover {
+    color: #5498da;
+  }
+}
 
 form.order_cycle {
   h2 {
@@ -89,9 +104,13 @@ form.order_cycle {
       width: 20px;
     }
 
+    .exchange-load-all-variants {
+      margin: 0px 5px 20px 5px;
+    }
+
     .exchange-select-all-variants {
       clear: both;
-      margin: 5px;
+      margin: 15px 5px 25px 5px;
     }
 
     .exchange-products {
@@ -139,19 +158,6 @@ form.order_cycle {
   .actions {
     margin-top: 3em;
   }
-
-  /* This styling makes it easier to read the debug info at the same time as working with the
-   * interface, but it breaks the tests. Enable when you need it.
-  #order-cycles-debug {
-    position: fixed;
-    top: 0px;
-    left: 0px;
-    height: 100%;
-    width: 316px;
-    overflow-y: scroll;
-    background-color: #fff;
-  }
-  */
 }
 
 table#listing_order_cycles {
@@ -192,17 +198,22 @@ table#listing_enterprise_groups {
 // TODO: remove this, use class below
 #no_results {
   font-weight:bold;
-  color: #DA5354;
+  color: $warning-red;
 }
 
 .no-results {
   font-weight:bold;
-  color: #DA5354;
+  color: $warning-red;
+
+  h1, h2, h3, h4, h5, h6 {
+    color: $warning-red;
+  }
 }
 
 #loading {
   text-align: center;
   img.spinner {
+    border: 0px;
     width: 100px;
     height: 100px;
   }
@@ -248,6 +259,9 @@ text-angular {
       box-shadow: 0 0 0.7em rgba(0,0,0,0.3) inset;
       background-color: #4583bf;
     }
+  }
+  a {
+    color: $spree-green
   }
 }
 

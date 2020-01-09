@@ -1,3 +1,5 @@
+require 'open_food_network/address_finder'
+
 module Admin
   class CustomersController < ResourceController
     before_filter :load_managed_shops, only: :index, if: :html_request?
@@ -21,6 +23,10 @@ module Admin
       end
     end
 
+    def show
+      render_as_json @customer, ams_prefix: params[:ams_prefix]
+    end
+
     def create
       @customer = Customer.new(params[:customer])
       if user_can_create_customer?
@@ -28,7 +34,7 @@ module Admin
           tag_rule_mapping = TagRule.mapping_for(Enterprise.where(id: @customer.enterprise))
           render_as_json @customer, tag_rule_mapping: tag_rule_mapping
         else
-          render json: { errors: @customer.errors.full_messages }, status: 400
+          render json: { errors: @customer.errors.full_messages }, status: :bad_request
         end
       else
         redirect_to '/unauthorized'
@@ -57,6 +63,7 @@ module Admin
 
     def collection
       return Customer.where("1=0") unless json_request? && params[:enterprise_id].present?
+
       enterprise = Enterprise.managed_by(spree_current_user).find_by_id(params[:enterprise_id])
       Customer.of(enterprise)
     end
@@ -68,6 +75,10 @@ module Admin
     def user_can_create_customer?
       spree_current_user.admin? ||
         spree_current_user.enterprises.include?(@customer.enterprise)
+    end
+
+    def ams_prefix_whitelist
+      [:subscription]
     end
   end
 end

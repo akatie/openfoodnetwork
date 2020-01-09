@@ -41,14 +41,10 @@ class DiscourseSsoController < ApplicationController
   end
 
   def require_config
-    raise ActionController::RoutingError.new('Not Found') unless discourse_configured?
+    raise ActionController::RoutingError, 'Not Found' unless discourse_configured?
   end
 
   def require_activation?
-    !admin_user? && !email_validated?
-  end
-
-  def email_validated?
-    spree_current_user.enterprises.confirmed.map(&:email).include?(spree_current_user.email)
+    !admin_user? && !spree_current_user.confirmed?
   end
 end

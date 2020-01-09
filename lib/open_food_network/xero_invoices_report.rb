@@ -1,14 +1,16 @@
 module OpenFoodNetwork
   class XeroInvoicesReport
-    def initialize(user, opts={})
+    def initialize(user, opts = {}, compile_table = false)
       @user = user
 
       @opts = opts.
-        reject { |k, v| v.blank? }.
-        reverse_merge({report_type: 'summary',
+        symbolize_keys.
+        reject { |_k, v| v.blank? }.
+        reverse_merge( report_type: 'summary',
                        invoice_date: Time.zone.today,
                        due_date: Time.zone.today + 1.month,
-                       account_code: 'food sales'})
+                       account_code: 'food sales' )
+      @compile_table = compile_table
     end
 
     def header
@@ -17,7 +19,7 @@ module OpenFoodNetwork
     end
 
     def search
-      permissions = OpenFoodNetwork::Permissions.new(@user)
+      permissions = ::Permissions::Order.new(@user)
       permissions.editable_orders.complete.not_state(:canceled).search(@opts[:q])
     end
 
@@ -26,6 +28,8 @@ module OpenFoodNetwork
     end
 
     def table
+      return [] unless @compile_table
+
       rows = []
 
       orders.each_with_index do |order, i|
@@ -37,8 +41,16 @@ module OpenFoodNetwork
       rows.compact
     end
 
-
     private
+
+    def report_options
+      @opts.merge(line_item_includes: line_item_includes)
+    end
+
+    def line_item_includes
+      [:bill_address, :adjustments,
+       line_items: { variant: [{ option_values: :option_type }, { product: :supplier }] }]
+    end
 
     def detail_rows_for_order(order, invoice_number, opts)
       rows = []
@@ -86,8 +98,8 @@ module OpenFoodNetwork
     def summary_rows_for_order(order, invoice_number, opts)
       rows = []
 
-      rows += produce_summary_rows(order, invoice_number, opts)  unless detail?
-      rows += fee_summary_rows(order, invoice_number, opts)      unless detail? && order.account_invoice?
+      rows += produce_summary_rows(order, invoice_number, opts) unless detail?
+      rows += fee_summary_rows(order, invoice_number, opts)
       rows += shipping_summary_rows(order, invoice_number, opts)
       rows += payment_summary_rows(order, invoice_number, opts)
       rows += admin_adjustment_summary_rows(order, invoice_number, opts) unless detail?
@@ -118,11 +130,11 @@ module OpenFoodNetwork
        summary_row(order, I18n.t(:report_header_total_taxable_admin), total_taxable_admin_adjustments(order), invoice_number, I18n.t(:report_header_gst_on_income), opts)]
     end
 
-    def summary_row(order, description, amount, invoice_number, tax_type, opts={})
+    def summary_row(order, description, amount, invoice_number, tax_type, opts = {})
       row order, '', description, '1', amount, invoice_number, tax_type, opts
     end
 
-    def row(order, sku, description, quantity, amount, invoice_number, tax_type, opts={})
+    def row(order, sku, description, quantity, amount, invoice_number, tax_type, opts = {})
       return nil if amount == 0
 
       [order.bill_address.andand.full_name,
@@ -152,27 +164,19 @@ module OpenFoodNetwork
        '',
        Spree::Config.currency,
        '',
-       order.paid? ? I18n.t(:y) : I18n.t(:n)
-      ]
+       order.paid? ? I18n.t(:y) : I18n.t(:n)]
     end
 
     def adjustments(order)
-      account_invoice_adjustments(order) + order.adjustments.admin
-    end
-
-    def account_invoice_adjustments(order)
-      order.adjustments.
-        billable_period.
-        select { |a| a.source.present? }
+      order.adjustments.admin
     end
 
     def adjustment_order(adjustment)
-      adjustment.source.andand.account_invoice.andand.order ||
-        (adjustment.adjustable.is_a?(Spree::Order) ? adjustment.adjustable : nil)
+      adjustment.adjustable.is_a?(Spree::Order) ? adjustment.adjustable : nil
     end
 
     def invoice_number_for(order, i)
-      @opts[:initial_invoice_number] ? @opts[:initial_invoice_number].to_i+i : order.number
+      @opts[:initial_invoice_number] ? @opts[:initial_invoice_number].to_i + i : order.number
     end
 
     def total_untaxable_products(order)

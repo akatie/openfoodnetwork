@@ -4,9 +4,18 @@ module Admin
     #
     def index
       order_params = params[:q].andand.delete :order
-      orders = OpenFoodNetwork::Permissions.new(spree_current_user).editable_orders.ransack(order_params).result
-      line_items = OpenFoodNetwork::Permissions.new(spree_current_user).editable_line_items.where(order_id: orders).ransack(params[:q])
-      render_as_json line_items.result.reorder('order_id ASC, id ASC')
+
+      order_permissions = ::Permissions::Order.new(spree_current_user)
+      orders = order_permissions.
+        editable_orders.ransack(order_params).result
+
+      line_items = order_permissions.
+        editable_line_items.where(order_id: orders).
+        includes(variant: { option_values: :option_type }).
+        ransack(params[:q]).result.
+        reorder('spree_line_items.order_id ASC, spree_line_items.id ASC')
+
+      render_as_json line_items
     end
 
     # PUT /admin/bulk_line_items/:id.json
@@ -22,9 +31,9 @@ module Admin
       order.with_lock do
         if @line_item.update_attributes(params[:line_item])
           order.update_distribution_charge!
-          render nothing: true, status: 204 # No Content, does not trigger ng resource auto-update
+          render nothing: true, status: :no_content # No Content, does not trigger ng resource auto-update
         else
-          render json: { errors: @line_item.errors }, status: 412
+          render json: { errors: @line_item.errors }, status: :precondition_failed
         end
       end
     end
@@ -36,7 +45,7 @@ module Admin
       authorize! :update, order
 
       @line_item.destroy
-      render nothing: true, status: 204 # No Content, does not trigger ng resource auto-update
+      render nothing: true, status: :no_content # No Content, does not trigger ng resource auto-update
     end
 
     private

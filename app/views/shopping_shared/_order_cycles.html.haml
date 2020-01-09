@@ -1,10 +1,11 @@
+- content_for :injection_data do
+  = inject_current_order_cycle
+
 %ordercycle{"ng-controller" => "OrderCycleCtrl"}
-  :javascript
-    angular.module('Darkswarm').value('orderCycleData', #{render "json/order_cycle"})
 
   - if @order_cycles and @order_cycles.empty?
     %h4
-      %i.ofn-i_032-closed-sign
+      %i.ofn-i_012-warning
       = t :shopping_oc_closed
     %p
       = t :shopping_oc_closed_description

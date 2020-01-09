@@ -49,7 +49,7 @@ describe ProducerProperty do
 
     describe "with a producer property for a product in a closed order cycle" do
       before do
-        oc.update_attributes! orders_close_at: 1.week.ago
+        oc.update_attributes! orders_open_at: 2.weeks.ago, orders_close_at: 1.week.ago
       end
 
       it "doesn't return the producer property for .currently_sold_by" do
@@ -66,22 +66,9 @@ describe ProducerProperty do
       let!(:oc) { create(:simple_order_cycle, distributors: [shop], variants: [product.variants.first, product2.variants.first]) }
 
       it "doesn't return duplicates" do
-        expect(ProducerProperty.currently_sold_by(shop).to_a.count).to eq 1
-        expect(ProducerProperty.ever_sold_by(shop).to_a.count).to eq 1
+        expect(ProducerProperty.currently_sold_by(shop).to_a.size).to eq 1
+        expect(ProducerProperty.ever_sold_by(shop).to_a.size).to eq 1
       end
-    end
-  end
-
-  describe "products caching" do
-    it "refreshes the products cache on change" do
-      expect(OpenFoodNetwork::ProductsCache).to receive(:producer_property_changed).with(pp)
-      pp.value = 123
-      pp.save
-    end
-
-    it "refreshes the products cache on destruction" do
-      expect(OpenFoodNetwork::ProductsCache).to receive(:producer_property_destroyed).with(pp)
-      pp.destroy
     end
   end
 end

@@ -31,6 +31,7 @@ module Spree
         StripeAccount.find_by_enterprise_id(preferred_enterprise_id).andand.stripe_user_id
       end
 
+      # NOTE: the name of this method is determined by Spree::Payment::Processing
       def purchase(money, creditcard, gateway_options)
         provider.purchase(*options_for_purchase_or_auth(money, creditcard, gateway_options))
       rescue Stripe::StripeError => e
@@ -38,9 +39,16 @@ module Spree
         failed_activemerchant_billing_response(e.message)
       end
 
+      # NOTE: the name of this method is determined by Spree::Payment::Processing
       def void(response_code, _creditcard, gateway_options)
         gateway_options[:stripe_account] = stripe_account_id
         provider.void(response_code, gateway_options)
+      end
+
+      # NOTE: the name of this method is determined by Spree::Payment::Processing
+      def credit(money, _creditcard, response_code, gateway_options)
+        gateway_options[:stripe_account] = stripe_account_id
+        provider.refund(money, response_code, gateway_options)
       end
 
       def create_profile(payment)
@@ -55,7 +63,7 @@ module Spree
       # In this gateway, what we call 'secret_key' is the 'login'
       def options
         options = super
-        options.merge(:login => Stripe.api_key)
+        options.merge(login: Stripe.api_key)
       end
 
       def options_for_purchase_or_auth(money, creditcard, gateway_options)
@@ -89,7 +97,7 @@ module Spree
       end
 
       def tokenize_instance_customer_card(customer, card)
-        token = Stripe::Token.create({card: card, customer: customer}, stripe_account: stripe_account_id)
+        token = Stripe::Token.create({ card: card, customer: customer }, stripe_account: stripe_account_id)
         token.id
       end
 
@@ -99,6 +107,7 @@ module Spree
 
       def ensure_enterprise_selected
         return if preferred_enterprise_id.andand > 0
+
         errors.add(:stripe_account_owner, I18n.t(:error_required))
       end
     end

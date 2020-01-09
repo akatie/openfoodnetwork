@@ -1,14 +1,13 @@
-angular.module("ofn.admin").factory "BulkProducts", (PagedFetcher, dataFetcher, $http) ->
+angular.module("ofn.admin").factory "BulkProducts", (ProductResource, dataFetcher, $http) ->
   new class BulkProducts
     products: []
+    pagination: {}
 
-    fetch: (filters, onComplete) ->
-      queryString = filters.reduce (qs,f) ->
-        return qs + "q[#{f.property.db_column}_#{f.predicate.predicate}]=#{f.value};"
-      , ""
-
-      url = "/api/products/bulk_products?page=::page::;per_page=20;#{queryString}"
-      PagedFetcher.fetch url, (data) => @addProducts data.products
+    fetch: (params) ->
+      ProductResource.index params, (data) =>
+        @products.length = 0
+        @addProducts data.products
+        angular.extend(@pagination, data.pagination)
 
     cloneProduct: (product) ->
       $http.post("/api/products/" + product.id + "/clone").success (data) =>
@@ -16,9 +15,9 @@ angular.module("ofn.admin").factory "BulkProducts", (PagedFetcher, dataFetcher, 
           @unpackProduct newProduct
           @insertProductAfter(product, newProduct)
 
-    updateVariantLists: (serverProducts, productsWithUnsavedVariants) ->
-      for product in productsWithUnsavedVariants
-        server_product = @findProductInList(product.id, serverProducts)
+    updateVariantLists: (serverProducts) ->
+      for server_product in serverProducts
+        product = @findProductInList(server_product.id, @products)
         product.variants = server_product.variants
         @loadVariantUnitValues product
 
@@ -66,8 +65,13 @@ angular.module("ofn.admin").factory "BulkProducts", (PagedFetcher, dataFetcher, 
     variantUnitValue: (product, variant) ->
       if variant.unit_value?
         if product.variant_unit_scale
-          variant.unit_value / product.variant_unit_scale
+          @divideAsInteger variant.unit_value, product.variant_unit_scale
         else
           variant.unit_value
       else
         null
+
+    # forces integer division to avoid javascript floating point imprecision
+    # using one billion as the multiplier so that it works for numbers with up to 9 decimal places
+    divideAsInteger: (a, b) ->
+      (a * 1000000000) / (b * 1000000000)

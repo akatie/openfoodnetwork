@@ -1,7 +1,6 @@
 require 'open_food_network/enterprise_fee_calculator'
 
 Spree::Calculator::DefaultTax.class_eval do
-
   private
 
   # Override this method to enable calculation of tax for
@@ -18,14 +17,16 @@ Spree::Calculator::DefaultTax.class_eval do
 
     # Added this block, finds relevant fees for each line_item, calculates the tax on them, and returns the total tax
     per_item_fees_total = order.line_items.sum do |line_item|
-      calculator.send(:per_item_enterprise_fee_applicators_for, line_item.variant)
-        .select { |applicator| (!applicator.enterprise_fee.inherits_tax_category && applicator.enterprise_fee.tax_category == rate.tax_category) ||
-          (applicator.enterprise_fee.inherits_tax_category && line_item.product.tax_category == rate.tax_category) }
+      calculator.per_item_enterprise_fee_applicators_for(line_item.variant)
+        .select { |applicator|
+          (!applicator.enterprise_fee.inherits_tax_category && applicator.enterprise_fee.tax_category == rate.tax_category) ||
+            (applicator.enterprise_fee.inherits_tax_category && line_item.product.tax_category == rate.tax_category)
+        }
         .sum { |applicator| applicator.enterprise_fee.compute_amount(line_item) }
     end
 
     # Added this block, finds relevant fees for whole order, calculates the tax on them, and returns the total tax
-    per_order_fees_total = calculator.send(:per_order_enterprise_fee_applicators_for, order)
+    per_order_fees_total = calculator.per_order_enterprise_fee_applicators_for(order)
       .select { |applicator| applicator.enterprise_fee.tax_category == rate.tax_category }
       .sum { |applicator| applicator.enterprise_fee.compute_amount(order) }
 
@@ -36,5 +37,4 @@ Spree::Calculator::DefaultTax.class_eval do
       round_to_two_places(total * rate.amount)
     end
   end
-
 end

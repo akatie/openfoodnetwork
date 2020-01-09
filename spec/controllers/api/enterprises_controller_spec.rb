@@ -1,35 +1,42 @@
 require 'spec_helper'
 
 module Api
-  describe EnterprisesController, :type => :controller do
+  describe EnterprisesController, type: :controller do
     include AuthenticationWorkflow
     render_views
 
     let(:enterprise) { create(:distributor_enterprise) }
 
-    before do
-      stub_authentication!
-      Enterprise.stub(:find).and_return(enterprise)
-    end
-
     context "as an enterprise owner" do
       let(:enterprise_owner) { create_enterprise_user enterprise_limit: 10 }
-      let(:enterprise) { create(:distributor_enterprise, owner: enterprise_owner) }
+      let!(:enterprise) { create(:distributor_enterprise, owner: enterprise_owner) }
 
       before do
-        Spree.user_class.stub :find_by_spree_api_key => enterprise_owner
+        allow(controller).to receive(:spree_current_user) { enterprise_owner }
       end
 
       describe "creating an enterprise" do
         let(:australia) { Spree::Country.find_by_name('Australia') }
-        let(:new_enterprise_params) { {enterprise: {name: 'name', email: 'email@example.com', address_attributes: {address1: '123 Abc Street', city: 'Northcote', zipcode: '3070', state_id: australia.states.first, country_id: australia.id } } } }
+        let(:new_enterprise_params) do
+          {
+            enterprise: {
+              name: 'name', contact_name: 'Sheila', address_attributes: {
+                address1: '123 Abc Street',
+                city: 'Northcote',
+                zipcode: '3070',
+                state_id: australia.states.first,
+                country_id: australia.id
+              }
+            }
+          }
+        end
 
         it "creates as sells=any when it is not a producer" do
           spree_post :create, new_enterprise_params
-          response.should be_success
+          expect(response).to be_success
 
           enterprise = Enterprise.last
-          enterprise.sells.should == 'any'
+          expect(enterprise.sells).to eq('any')
         end
       end
     end
@@ -39,36 +46,62 @@ module Api
 
       before do
         enterprise_manager.enterprise_roles.build(enterprise: enterprise).save
-        Spree.user_class.stub :find_by_spree_api_key => enterprise_manager
+        allow(controller).to receive(:spree_current_user) { enterprise_manager }
       end
 
       describe "submitting a valid image" do
         before do
-          enterprise.stub(:update_attributes).and_return(true)
+          allow(Enterprise)
+            .to receive(:find_by_permalink).with(enterprise.id.to_s) { enterprise }
+          allow(enterprise).to receive(:update_attributes).and_return(true)
         end
 
         it "I can update enterprise image" do
-          spree_post :update_image, logo: 'a logo'
-          response.should be_success
+          spree_post :update_image, logo: 'a logo', id: enterprise.id
+          expect(response).to be_success
         end
       end
     end
 
-    describe "as an non-managing user" do
+    context "as an non-managing user" do
       let(:non_managing_user) { create_enterprise_user }
 
       before do
-        Spree.user_class.stub :find_by_spree_api_key => non_managing_user
+        allow(Enterprise)
+          .to receive(:find_by_permalink).with(enterprise.id.to_s) { enterprise }
+        allow(controller).to receive(:spree_current_user) { non_managing_user }
       end
 
       describe "submitting a valid image" do
-        before do
-          enterprise.stub(:update_attributes).and_return(true)
-        end
+        before { allow(enterprise).to receive(:update_attributes).and_return(true) }
 
         it "I can't update enterprise image" do
-          spree_post :update_image, logo: 'a logo'
+          spree_post :update_image, logo: 'a logo', id: enterprise.id
           assert_unauthorized!
+        end
+      end
+    end
+
+    context "as a non-authenticated user" do
+      let!(:hub) {
+        create(:distributor_enterprise, with_payment_and_shipping: true, name: 'Shopfront Test Hub')
+      }
+      let!(:producer) { create(:supplier_enterprise, name: 'Shopfront Test Producer') }
+      let!(:category) { create(:taxon, name: 'Fruit') }
+      let!(:product) { create(:product, supplier: producer, primary_taxon: category ) }
+      let!(:relationship) { create(:enterprise_relationship, parent: hub, child: producer) }
+
+      before do
+        allow(controller).to receive(:spree_current_user) { nil }
+      end
+
+      describe "fetching shopfronts data" do
+        it "returns data for an enterprise" do
+          spree_get :shopfront, id: producer.id, format: :json
+
+          expect(json_response['name']).to eq 'Shopfront Test Producer'
+          expect(json_response['hubs'][0]['name']).to eq 'Shopfront Test Hub'
+          expect(json_response['supplied_taxons'][0]['name']).to eq 'Fruit'
         end
       end
     end

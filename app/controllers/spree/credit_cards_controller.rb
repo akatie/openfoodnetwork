@@ -10,10 +10,25 @@ module Spree
         render json: @credit_card, serializer: ::Api::CreditCardSerializer, status: :ok
       else
         message = t(:card_could_not_be_saved)
-        render json: { flash: { error: I18n.t(:spree_gateway_error_flash_for_checkout, error: message) } }, status: 400
+        render json: { flash: { error: I18n.t(:spree_gateway_error_flash_for_checkout, error: message) } }, status: :bad_request
       end
     rescue Stripe::CardError => e
-      return render json: { flash: { error: I18n.t(:spree_gateway_error_flash_for_checkout, error: e.message) } }, status: 400
+      render json: { flash: { error: I18n.t(:spree_gateway_error_flash_for_checkout, error: e.message) } }, status: :bad_request
+    end
+
+    def update
+      @credit_card = Spree::CreditCard.find_by_id(params[:id])
+      return update_failed unless @credit_card
+
+      authorize! :update, @credit_card
+
+      if @credit_card.update_attributes(params[:credit_card])
+        render json: @credit_card, serializer: ::Api::CreditCardSerializer, status: :ok
+      else
+        update_failed
+      end
+    rescue ArgumentError
+      update_failed
     end
 
     def destroy
@@ -49,6 +64,7 @@ module Spree
 
     def stored_card_attributes
       return {} unless @customer.try(:default_source)
+
       {
         month: params[:exp_month],
         year: params[:exp_year],
@@ -64,6 +80,10 @@ module Spree
       # Can't mass assign user:
       card.user_id = spree_current_user.id
       card
+    end
+
+    def update_failed
+      render json: { flash: { error: t(:card_could_not_be_updated) } }, status: :bad_request
     end
   end
 end

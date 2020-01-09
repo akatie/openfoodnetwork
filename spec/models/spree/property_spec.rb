@@ -27,7 +27,7 @@ module Spree
         end
 
         it "doesn't return duplicates" do
-          expect(Spree::Property.applied_by(producer).to_a.count).to eq 1
+          expect(Spree::Property.applied_by(producer).to_a.size).to eq 1
         end
       end
 
@@ -89,22 +89,10 @@ module Spree
           end
 
           it "doesn't return duplicates" do
-            expect(Property.currently_sold_by(shop).to_a.count).to eq 1
-            expect(Property.ever_sold_by(shop).to_a.count).to eq 1
+            expect(Property.currently_sold_by(shop).to_a.size).to eq 1
+            expect(Property.ever_sold_by(shop).to_a.size).to eq 1
           end
         end
-      end
-    end
-
-    describe "callbacks" do
-      let(:property) { product_property.property }
-      let(:product) { product_property.product }
-      let(:product_property) { create(:product_property) }
-
-      it "refreshes the products cache on save" do
-        expect(OpenFoodNetwork::ProductsCache).to receive(:product_changed).with(product)
-        property.name = 'asdf'
-        property.save
       end
     end
   end

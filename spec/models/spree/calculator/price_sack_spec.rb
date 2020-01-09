@@ -9,9 +9,23 @@ describe Spree::Calculator::PriceSack do
     calculator
   end
 
-  let(:line_item) { stub_model(Spree::LineItem, price: 1, quantity: 2) }
+  let(:line_item) { build(:line_item, price: price, quantity: 2) }
 
-  it "computes with a line item object" do
-    calculator.compute(line_item)
+  context 'when the order amount is below preferred minimal' do
+    let(:price) { 2 }
+    it "uses the preferred normal amount" do
+      expect(calculator.compute(line_item)).to eq(10)
+    end
+  end
+
+  context 'when the order amount is above preferred minimal' do
+    let(:price) { 6 }
+    it "uses the preferred discount amount" do
+      expect(calculator.compute(line_item)).to eq(1)
+    end
+  end
+
+  context "extends LocalizedNumber" do
+    it_behaves_like "a model using the LocalizedNumber module", [:preferred_minimal_amount, :preferred_normal_amount, :preferred_discount_amount]
   end
 end

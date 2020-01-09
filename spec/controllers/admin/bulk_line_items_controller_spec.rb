@@ -1,63 +1,63 @@
 require 'spec_helper'
 
-describe Admin::BulkLineItemsController do
+describe Admin::BulkLineItemsController, type: :controller do
   include AuthenticationWorkflow
 
   describe '#index' do
     render_views
 
     let(:line_item_attributes) { %i[id quantity max_quantity price supplier final_weight_volume units_product units_variant order] }
-    let!(:dist1) { FactoryGirl.create(:distributor_enterprise) }
-    let!(:order1) { FactoryGirl.create(:order, state: 'complete', completed_at: 1.day.ago, distributor: dist1, billing_address: FactoryGirl.create(:address) ) }
-    let!(:order2) { FactoryGirl.create(:order, state: 'complete', completed_at: Time.zone.now, distributor: dist1, billing_address: FactoryGirl.create(:address) ) }
-    let!(:order3) { FactoryGirl.create(:order, state: 'complete', completed_at: Time.zone.now, distributor: dist1, billing_address: FactoryGirl.create(:address) ) }
-    let!(:line_item1) { FactoryGirl.create(:line_item, order: order1) }
-    let!(:line_item2) { FactoryGirl.create(:line_item, order: order2) }
-    let!(:line_item3) { FactoryGirl.create(:line_item, order: order2) }
-    let!(:line_item4) { FactoryGirl.create(:line_item, order: order3) }
+    let!(:dist1) { FactoryBot.create(:distributor_enterprise) }
+    let!(:order1) { FactoryBot.create(:order, state: 'complete', completed_at: 1.day.ago, distributor: dist1, billing_address: FactoryBot.create(:address) ) }
+    let!(:order2) { FactoryBot.create(:order, state: 'complete', completed_at: Time.zone.now, distributor: dist1, billing_address: FactoryBot.create(:address) ) }
+    let!(:order3) { FactoryBot.create(:order, state: 'complete', completed_at: Time.zone.now, distributor: dist1, billing_address: FactoryBot.create(:address) ) }
+    let!(:line_item1) { FactoryBot.create(:line_item_with_shipment, order: order1) }
+    let!(:line_item2) { FactoryBot.create(:line_item_with_shipment, order: order2) }
+    let!(:line_item3) { FactoryBot.create(:line_item_with_shipment, order: order2) }
+    let!(:line_item4) { FactoryBot.create(:line_item_with_shipment, order: order3) }
 
     context "as a normal user" do
-      before { controller.stub spree_current_user: create_enterprise_user }
+      before { allow(controller).to receive_messages spree_current_user: create_enterprise_user }
 
       it "should deny me access to the index action" do
-        spree_get :index, :format => :json
+        spree_get :index, format: :json
         expect(response).to redirect_to spree.unauthorized_path
       end
     end
 
     context "as an administrator" do
       before do
-        controller.stub spree_current_user: quick_login_as_admin
+        allow(controller).to receive_messages spree_current_user: quick_login_as_admin
       end
 
       context "when no ransack params are passed in" do
         before do
-          spree_get :index, :format => :json
+          spree_get :index, format: :json
         end
 
         it "retrieves a list of line_items with appropriate attributes, including line items with appropriate attributes" do
           keys = json_response.first.keys.map(&:to_sym)
-          line_item_attributes.all?{ |attr| keys.include? attr }.should == true
+          expect(line_item_attributes.all?{ |attr| keys.include? attr }).to eq(true)
         end
 
         it "sorts line_items in ascending id line_item" do
           ids = json_response.map{ |line_item| line_item['id'] }
-          ids[0].should < ids[1]
-          ids[1].should < ids[2]
+          expect(ids[0]).to be < ids[1]
+          expect(ids[1]).to be < ids[2]
         end
 
         it "formats final_weight_volume as a float" do
-          json_response.map{ |line_item| line_item['final_weight_volume'] }.all?{ |fwv| fwv.is_a?(Float) }.should == true
+          expect(json_response.map{ |line_item| line_item['final_weight_volume'] }.all?{ |fwv| fwv.is_a?(Float) }).to eq(true)
         end
 
         it "returns distributor object with id key" do
-          json_response.map{ |line_item| line_item['supplier'] }.all?{ |d| d.key?('id') }.should == true
+          expect(json_response.map{ |line_item| line_item['supplier'] }.all?{ |d| d.key?('id') }).to eq(true)
         end
       end
 
       context "when ransack params are passed in for line items" do
         before do
-          spree_get :index, :format => :json, q: { order_id_eq: order2.id }
+          spree_get :index, format: :json, q: { order_id_eq: order2.id }
         end
 
         it "retrives a list of line items which match the criteria" do
@@ -67,7 +67,7 @@ describe Admin::BulkLineItemsController do
 
       context "when ransack params are passed in for orders" do
         before do
-          spree_get :index, :format => :json, q: { order: { completed_at_gt: 2.hours.ago } }
+          spree_get :index, format: :json, q: { order: { completed_at_gt: 2.hours.ago } }
         end
 
         it "retrives a list of line items whose orders match the criteria" do
@@ -82,16 +82,16 @@ describe Admin::BulkLineItemsController do
       let(:distributor2) { create(:distributor_enterprise) }
       let(:coordinator) { create(:distributor_enterprise) }
       let(:order_cycle) { create(:simple_order_cycle, coordinator: coordinator) }
-      let!(:order1) { FactoryGirl.create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now, distributor: distributor1, billing_address: FactoryGirl.create(:address) ) }
-      let!(:line_item1) { FactoryGirl.create(:line_item, order: order1, product: FactoryGirl.create(:product, supplier: supplier)) }
-      let!(:line_item2) { FactoryGirl.create(:line_item, order: order1, product: FactoryGirl.create(:product, supplier: supplier)) }
-      let!(:order2) { FactoryGirl.create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now, distributor: distributor2, billing_address: FactoryGirl.create(:address) ) }
-      let!(:line_item3) { FactoryGirl.create(:line_item, order: order2, product: FactoryGirl.create(:product, supplier: supplier)) }
+      let!(:order1) { FactoryBot.create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now, distributor: distributor1, billing_address: FactoryBot.create(:address) ) }
+      let!(:line_item1) { FactoryBot.create(:line_item_with_shipment, order: order1, product: FactoryBot.create(:product, supplier: supplier)) }
+      let!(:line_item2) { FactoryBot.create(:line_item_with_shipment, order: order1, product: FactoryBot.create(:product, supplier: supplier)) }
+      let!(:order2) { FactoryBot.create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now, distributor: distributor2, billing_address: FactoryBot.create(:address) ) }
+      let!(:line_item3) { FactoryBot.create(:line_item_with_shipment, order: order2, product: FactoryBot.create(:product, supplier: supplier)) }
 
       context "producer enterprise" do
         before do
-          controller.stub spree_current_user: supplier.owner
-          spree_get :index, :format => :json
+          allow(controller).to receive_messages spree_current_user: supplier.owner
+          spree_get :index, format: :json
         end
 
         it "does not display line items for which my enterprise is a supplier" do
@@ -101,25 +101,25 @@ describe Admin::BulkLineItemsController do
 
       context "coordinator enterprise" do
         before do
-          controller.stub spree_current_user: coordinator.owner
-          spree_get :index, :format => :json
+          allow(controller).to receive_messages spree_current_user: coordinator.owner
+          spree_get :index, format: :json
         end
 
         it "retrieves a list of line_items" do
           keys = json_response.first.keys.map(&:to_sym)
-          line_item_attributes.all?{ |attr| keys.include? attr }.should == true
+          expect(line_item_attributes.all?{ |attr| keys.include? attr }).to eq(true)
         end
       end
 
       context "hub enterprise" do
         before do
-          controller.stub spree_current_user: distributor1.owner
-          spree_get :index, :format => :json
+          allow(controller).to receive_messages spree_current_user: distributor1.owner
+          spree_get :index, format: :json
         end
 
         it "retrieves a list of line_items" do
           keys = json_response.first.keys.map(&:to_sym)
-          line_item_attributes.all?{ |attr| keys.include? attr }.should == true
+          expect(line_item_attributes.all?{ |attr| keys.include? attr }).to eq(true)
         end
       end
     end
@@ -130,15 +130,19 @@ describe Admin::BulkLineItemsController do
     let(:distributor1) { create(:distributor_enterprise) }
     let(:coordinator) { create(:distributor_enterprise) }
     let(:order_cycle) { create(:simple_order_cycle, coordinator: coordinator) }
-    let!(:order1) { FactoryGirl.create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now, distributor: distributor1, billing_address: FactoryGirl.create(:address) ) }
-    let!(:line_item1) { FactoryGirl.create(:line_item, order: order1, product: FactoryGirl.create(:product, supplier: supplier)) }
+    let!(:order1) { FactoryBot.create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now, distributor: distributor1, billing_address: FactoryBot.create(:address) ) }
+    let!(:line_item1) {
+      line_item1 = FactoryBot.create(:line_item_with_shipment, order: order1, product: FactoryBot.create(:product, supplier: supplier))
+      # make sure shipment is available through db reloads of this line_item
+      line_item1.tap(&:save!)
+    }
     let(:line_item_params) { { quantity: 3, final_weight_volume: 3000, price: 3.00 } }
     let(:params) { { id: line_item1.id, order_id: order1.number, line_item: line_item_params } }
 
     context "as an enterprise user" do
       context "producer enterprise" do
         before do
-          controller.stub spree_current_user: supplier.owner
+          allow(controller).to receive_messages spree_current_user: supplier.owner
           spree_put :update, params
         end
 
@@ -151,7 +155,7 @@ describe Admin::BulkLineItemsController do
         render_views
 
         before do
-          controller.stub spree_current_user: coordinator.owner
+          allow(controller).to receive_messages spree_current_user: coordinator.owner
         end
 
         # Used in admin/orders/bulk_management
@@ -205,7 +209,7 @@ describe Admin::BulkLineItemsController do
 
       context "hub enterprise" do
         before do
-          controller.stub spree_current_user: distributor1.owner
+          allow(controller).to receive_messages spree_current_user: distributor1.owner
           xhr :put, :update, params
         end
 
@@ -226,12 +230,12 @@ describe Admin::BulkLineItemsController do
     let(:distributor1) { create(:distributor_enterprise) }
     let(:coordinator) { create(:distributor_enterprise) }
     let(:order_cycle) { create(:simple_order_cycle, coordinator: coordinator) }
-    let!(:order1) { FactoryGirl.create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now, distributor: distributor1, billing_address: FactoryGirl.create(:address) ) }
-    let!(:line_item1) { FactoryGirl.create(:line_item, order: order1, product: FactoryGirl.create(:product, supplier: supplier)) }
+    let!(:order1) { FactoryBot.create(:order, order_cycle: order_cycle, state: 'complete', completed_at: Time.zone.now, distributor: distributor1, billing_address: FactoryBot.create(:address) ) }
+    let!(:line_item1) { FactoryBot.create(:line_item_with_shipment, order: order1, product: FactoryBot.create(:product, supplier: supplier)) }
     let(:params) { { id: line_item1.id, order_id: order1.number } }
 
     before do
-      controller.stub spree_current_user: coordinator.owner
+      allow(controller).to receive_messages spree_current_user: coordinator.owner
     end
 
     # Used in admin/orders/bulk_management

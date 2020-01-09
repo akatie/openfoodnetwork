@@ -13,4 +13,8 @@ module AuthorizeOnLoadResource
   end
 end
 
-Spree::Admin::ResourceController.send(:prepend, AuthorizeOnLoadResource)
+Spree::Admin::ResourceController.prepend(AuthorizeOnLoadResource)
+
+Spree::Admin::ResourceController.class_eval do
+  rescue_from CanCan::AccessDenied, with: :unauthorized
+end
